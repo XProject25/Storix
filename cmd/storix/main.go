@@ -361,6 +361,16 @@ func sameSite(v string) http.SameSite {
 // instance. It is printed on first boot and readable with storix setup-token.
 func (a *app) ensureSetupToken(ctx context.Context) error {
 	if a.store.SetupCompleted(ctx) {
+		// An install that finished its wizard before the token file was
+		// cleaned up on completion still has one lying about. Remove it on
+		// the next start rather than leaving a dead credential on disk for
+		// the life of the server.
+		stale := filepath.Join(a.cfg.Storage.DataDir, "setup-token")
+		if err := os.Remove(stale); err == nil {
+			a.log.Info("removed the leftover setup token", "file", stale)
+		} else if !os.IsNotExist(err) {
+			a.log.Warn("leftover setup token not removed", "file", stale, "err", err)
+		}
 		return nil
 	}
 	token, err := a.store.GetSetting(ctx, "setup.token")

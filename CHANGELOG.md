@@ -6,6 +6,15 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.2.2] - 2026-08-26
+
+### Fixed
+
+- The 1.2.1 cleanup of the setup token only ran when a wizard completed, so
+  every server set up before that release kept a dead credential file in its
+  data directory for good. It is now removed on the next start of an already
+  configured install, which is the case that actually needed it.
+
 ## [1.2.1] - 2026-08-26
 
 A review of the code that landed in 1.2 with the least scrutiny, plus the
@@ -284,6 +293,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.2.2]: https://github.com/XProject25/Storix/releases/tag/v1.2.2
 [1.2.1]: https://github.com/XProject25/Storix/releases/tag/v1.2.1
 [1.2.0]: https://github.com/XProject25/Storix/releases/tag/v1.2.0
 [1.1.1]: https://github.com/XProject25/Storix/releases/tag/v1.1.1
