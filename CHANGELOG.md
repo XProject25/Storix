@@ -6,6 +6,51 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.2.0] - 2026-08-26
+
+Storix stops being something you can only use in a browser tab.
+
+### Added
+
+- **A network drive.** Storix speaks WebDAV at `/dav/`, so it mounts in
+  Windows Explorer, the macOS Finder or a Linux file manager and server files
+  behave like local ones. The folders an account may reach appear as the top
+  level collections, and everything below goes through the same guarded layer
+  the browser uses, so the drive can no more leave a mount than the web
+  interface can. Locks are held in memory because Windows and macOS both
+  insist on LOCK before they will write.
+- **Access tokens.** Scripts, backups, rclone and continuous integration can
+  now reach the API without a browser. A token looks like
+  `sxp_<prefix>_<secret>`; only the prefix is stored in the clear and the
+  secret is kept as a digest, so a leaked database yields nothing usable. A
+  read only token narrows the account it belongs to and can never widen it,
+  and a token is revoked on its own without changing a password or signing
+  anybody out. Tokens also serve as the password a WebDAV client presents.
+- **A duplicate finder.** It reports what is wasted rather than merely what is
+  big. Candidates are bucketed by size first, so most files are never read,
+  then compared on their first 64 KiB, and only the survivors are hashed in
+  full. When the interface offers to delete something, "probably identical"
+  is not good enough. Removal goes to the recycle bin, and the code refuses to
+  preselect every copy in a group.
+- **Documentation worth reading:** `docs/API.md` for the HTTP surface with
+  working curl recipes, and `docs/WEBDAV.md` for mounting on all three
+  platforms, including the Windows registry caveat about Basic authentication
+  over plain HTTP.
+
+### Fixed
+
+- A WebDAV path holding `..` was answered with a redirect out of the drive and
+  into the web application, because the router cleaned the path before routing
+  it. Nothing leaked, but a mounted drive has to stay inside its own name
+  space, so those requests are now simply not found. The drive is dispatched
+  ahead of the router to keep the raw path intact.
+
+### Internal
+
+- The suite is 156 tests. The new WebDAV tests cover the authentication
+  challenge, the mount listing, a byte for byte round trip, folder creation
+  and rename, and four ways of trying to climb out of a mount.
+
 ## [1.1.1] - 2026-08-26
 
 ### Fixed
@@ -184,6 +229,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.2.0]: https://github.com/XProject25/Storix/releases/tag/v1.2.0
 [1.1.1]: https://github.com/XProject25/Storix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/XProject25/Storix/releases/tag/v1.1.0
 [1.0.1]: https://github.com/XProject25/Storix/releases/tag/v1.0.1

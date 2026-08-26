@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/XProject25/Storix/internal/store"
 )
@@ -40,6 +41,12 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/fs/rename-bulk/preview", a.requirePerm(store.PermRename, a.handleRenameBulkPreview))
 	mux.HandleFunc("POST /api/v1/fs/rename-bulk", a.requirePerm(store.PermRename, a.handleRenameBulk))
 	mux.HandleFunc("GET /api/v1/auth/quota", a.requireAuth(a.handleMyQuota))
+	mux.HandleFunc("GET /api/v1/fs/duplicates", a.requirePerm(store.PermView, a.handleDuplicates))
+
+	// ---- programmatic access ------------------------------------------------
+	mux.HandleFunc("GET /api/v1/auth/tokens", a.requireAuth(a.handleListTokens))
+	mux.HandleFunc("POST /api/v1/auth/tokens", a.requireAuth(a.handleCreateToken))
+	mux.HandleFunc("DELETE /api/v1/auth/tokens/{id}", a.requireAuth(a.handleDeleteToken))
 	mux.HandleFunc("GET /api/v1/users/{id}/quota", a.requirePerm(store.PermUsers, a.handleUserQuota))
 
 	// ---- reading content ----------------------------------------------------
@@ -136,8 +143,24 @@ func (a *API) Handler() http.Handler {
 		mux.Handle("/", a.Static)
 	}
 
-	// Outermost middleware first.
-	var h http.Handler = mux
+	// ---- network drive ------------------------------------------------------
+	// WebDAV lets Storix be mounted in Windows Explorer, the macOS Finder or a
+	// Linux file manager. It authenticates with Basic credentials rather than
+	// the session cookie, so it sits outside the CSRF guard by design.
+	//
+	// It is dispatched ahead of the mux rather than registered on it, because
+	// ServeMux cleans a path before routing and would answer a name holding
+	// ".." with a redirect out of the drive and into the web application. A
+	// file manager mounted as a drive has to stay inside its own name space
+	// and simply say the name is not there.
+	dav := a.webdavHandler()
+	var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/dav" || strings.HasPrefix(r.URL.Path, "/dav/") {
+			dav.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 	h = a.setupGate(h)
 	h = a.writeGuard(h)
 	h = a.csrfGuard(h)

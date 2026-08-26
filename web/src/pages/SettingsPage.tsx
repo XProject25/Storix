@@ -5,11 +5,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api } from '../lib/api'
-import type { Release, RootFolder, Settings, SortField, ViewMode } from '../lib/types'
-import { bytes, dateTime, duration, percent, truncateMiddle } from '../lib/format'
+import type { ApiToken, Release, RootFolder, Settings, SortField, ViewMode } from '../lib/types'
+import { bytes, dateShort, dateTime, duration, percent, truncateMiddle } from '../lib/format'
 import { useSession } from '../lib/session'
 import { useApp, type Theme } from '../state/app'
 import { Icon, type IconName } from '../components/Icon'
+import { TokenDialog } from '../components/TokenDialog'
 import {
   Button,
   ConfirmDialog,
@@ -387,13 +388,14 @@ function RootCard({ root, onRemove }: { root: RootFolder; onRemove: () => void }
 
 // ---- tabs --------------------------------------------------------------------
 
-type TabId = 'general' | 'folders' | 'access' | 'domain' | 'updates' | 'audit' | 'about'
+type TabId = 'general' | 'folders' | 'access' | 'domain' | 'tokens' | 'updates' | 'audit' | 'about'
 
 const TABS: Array<{ id: TabId; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'folders', label: 'Folders', icon: 'drive' },
   { id: 'access', label: 'Access', icon: 'shield' },
   { id: 'domain', label: 'Domain and HTTPS', icon: 'globe' },
+  { id: 'tokens', label: 'Network drive and tokens', icon: 'key' },
   { id: 'updates', label: 'Updates', icon: 'download' },
   { id: 'audit', label: 'Security log', icon: 'activity' },
   { id: 'about', label: 'About', icon: 'info' },
@@ -543,13 +545,13 @@ export default function SettingsPage() {
 
         <div className="sx-scroll min-h-0 flex-1">
           <div className="mx-auto max-w-3xl px-6 py-6">
-            {settings.isPending && tab !== 'audit' && tab !== 'about' && tab !== 'folders' ? (
+            {settings.isPending && tab !== 'audit' && tab !== 'about' && tab !== 'folders' && tab !== 'tokens' ? (
               <div className="space-y-4">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="h-24 w-full" />
                 <Skeleton className="h-24 w-full" />
               </div>
-            ) : settings.isError && tab !== 'audit' && tab !== 'about' && tab !== 'folders' ? (
+            ) : settings.isError && tab !== 'audit' && tab !== 'about' && tab !== 'folders' && tab !== 'tokens' ? (
               <EmptyState
                 icon="alert"
                 title="Settings could not be loaded"
@@ -586,6 +588,7 @@ export default function SettingsPage() {
                 {tab === 'folders' && <FoldersTab />}
                 {tab === 'access' && draft && <AccessTab draft={draft} patch={patchDraft} />}
                 {tab === 'domain' && draft && <DomainTab draft={draft} />}
+                {tab === 'tokens' && <TokensTab />}
                 {tab === 'updates' && draft && (
                   <UpdatesTab draft={draft} patch={patchDraft} fallbackVersion={version} />
                 )}
@@ -1098,6 +1101,275 @@ function DomainTab({ draft }: { draft: Settings }) {
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+// ---- network drive and tokens -------------------------------------------------
+
+// A token this close to running out is worth pointing at.
+const TOKEN_WARNING_WINDOW = 7 * 24 * 60 * 60 * 1000
+
+function DriveCommand({ platform, command }: { platform: string; command: string }) {
+  const toast = useToast()
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-line bg-elevated px-3 py-2">
+      <span className="mt-1 w-16 shrink-0 text-xs font-medium text-faint">{platform}</span>
+      <code className="min-w-0 flex-1 break-words py-0.5 font-mono text-xs leading-5 text-ink">{command}</code>
+      <IconButton
+        icon="copy"
+        label={`Copy the ${platform} line`}
+        size={15}
+        className="h-7 w-7 shrink-0"
+        onClick={() => {
+          void copyText(command).then((ok) =>
+            ok ? toast.success('Command copied') : toast.error('The browser blocked the clipboard'),
+          )
+        }}
+      />
+    </div>
+  )
+}
+
+/** TokenExpiry says when a token runs out, and only raises its voice near the end. */
+function TokenExpiry({ token }: { token: ApiToken }) {
+  if (!token.expiresAt) return <span className="text-sm text-muted">Never</span>
+  const at = new Date(token.expiresAt)
+  if (Number.isNaN(at.getTime())) return <span className="text-sm text-muted">Never</span>
+  const left = at.getTime() - Date.now()
+  if (token.expired || left <= 0) return <span className="sx-chip text-faint">Expired</span>
+  if (left <= TOKEN_WARNING_WINDOW) {
+    return <span className="sx-chip border-warning/35 bg-warning/12 text-warning">{dateShort(at)}</span>
+  }
+  return <span className="text-sm text-muted">{dateShort(at)}</span>
+}
+
+function TokensTab() {
+  const client = useQueryClient()
+  const toast = useToast()
+  const [creating, setCreating] = useState(false)
+  const [revoking, setRevoking] = useState<ApiToken | null>(null)
+  const [revokeError, setRevokeError] = useState('')
+
+  const tokens = useQuery({ queryKey: ['tokens'], queryFn: api.tokens })
+
+  const revoke = useMutation({
+    mutationFn: (id: number) => api.deleteToken(id),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['tokens'] })
+      toast.success('Token revoked', 'Anything that was using it has stopped working.')
+      setRevoking(null)
+    },
+    onError: (failure: unknown) => setRevokeError(explain(failure)),
+  })
+
+  const webdav = tokens.data?.webdav
+  const list = tokens.data?.tokens ?? []
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <SectionTitle>Network drive</SectionTitle>
+        <div className="sx-panel space-y-3 p-4">
+          <p className="text-sm text-muted">
+            Storix can be mounted as a drive on your computer, so files are dragged in and out with Explorer or
+            the Finder without a browser open.
+          </p>
+          <p className="text-sm text-muted">
+            Every folder you can reach here is inside it, and nothing is copied to the machine until you open a
+            file.
+          </p>
+
+          {tokens.isPending ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map((index) => (
+                <Skeleton key={index} className="h-10 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : webdav && webdav.enabled ? (
+            <>
+              <div className="space-y-2">
+                <DriveCommand platform="Windows" command={webdav.windows} />
+                <DriveCommand platform="macOS" command={webdav.macos} />
+                <DriveCommand platform="Linux" command={webdav.linux} />
+              </div>
+              <Notice tone="info" icon="key">
+                Sign in with your username and an access token as the password. A token can be revoked on its
+                own, so a lost laptop or a retired script never means changing the account password.
+              </Notice>
+            </>
+          ) : (
+            <Notice tone="info" icon="info">
+              The network drive is switched off on this server, so there is nothing to mount yet.
+            </Notice>
+          )}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <SectionTitle>Access tokens</SectionTitle>
+            <p className="-mt-1 text-sm text-muted">
+              A token lets a program reach this server without your account password and without a browser.
+              Give each one its own name so it can be revoked on its own.
+            </p>
+          </div>
+          <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
+            Create token
+          </Button>
+        </div>
+
+        <div className="sx-panel mt-4 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[46rem] border-collapse text-left">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-[0.12em] text-faint">
+                  <th className="px-4 py-3 font-semibold">Name</th>
+                  <th className="px-4 py-3 font-semibold">Scope</th>
+                  <th className="px-4 py-3 font-semibold">Created</th>
+                  <th className="px-4 py-3 font-semibold">Last used</th>
+                  <th className="px-4 py-3 font-semibold">Expires</th>
+                  <th className="px-4 py-3 text-right font-semibold">Action</th>
+                </tr>
+              </thead>
+              {tokens.isPending ? (
+                <tbody>
+                  {[0, 1, 2].map((index) => (
+                    <tr key={index} className="border-t border-line">
+                      {[0, 1, 2, 3, 4, 5].map((cell) => (
+                        <td key={cell} className="px-4 py-3">
+                          <Skeleton className="h-4 w-full" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              ) : tokens.isError ? (
+                <tbody>
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon="alert"
+                        title="The token list could not be loaded"
+                        message={explain(tokens.error)}
+                        action={
+                          <Button icon="refresh" onClick={() => void tokens.refetch()}>
+                            Try again
+                          </Button>
+                        }
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              ) : list.length === 0 ? (
+                <tbody>
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon="key"
+                        title="No tokens yet"
+                        message="A token is what a script, a backup job, rclone or a mounted drive signs in with. Make one for each of them, give it only the access it needs, and revoke it on its own when it is done."
+                        action={
+                          <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
+                            Create token
+                          </Button>
+                        }
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              ) : (
+                <tbody>
+                  {list.map((token) => (
+                    <tr key={token.id} className="border-t border-line transition-colors hover:bg-elevated">
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-ink">{token.name}</div>
+                        <div className="mt-0.5 font-mono text-xs text-faint">{token.prefix}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {token.scope === 'write' ? (
+                          <span className="sx-chip border-primary/35 bg-primary/12 text-primary">
+                            Read and write
+                          </span>
+                        ) : (
+                          <span className="sx-chip">Read only</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-muted">
+                        {dateTime(token.createdAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {token.lastUsedAt ? (
+                          <>
+                            <div className="whitespace-nowrap text-sm text-muted">
+                              {dateTime(token.lastUsedAt)}
+                            </div>
+                            {token.lastUsedIp && (
+                              <div className="mt-0.5 font-mono text-xs text-faint">{token.lastUsedIp}</div>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-sm text-faint">Never used</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <TokenExpiry token={token} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="danger"
+                          icon="trash"
+                          onClick={() => {
+                            setRevokeError('')
+                            setRevoking(token)
+                          }}
+                        >
+                          Revoke
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              )}
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <TokenDialog open={creating} onClose={() => setCreating(false)} />
+
+      <ConfirmDialog
+        open={revoking !== null}
+        danger
+        title="Revoke this token"
+        confirmLabel="Revoke token"
+        busy={revoke.isPending}
+        message={
+          <div className="space-y-3">
+            <p>
+              {revoking ? revoking.name : 'This token'} stops working immediately. Any script, backup or
+              mounted drive still using it is refused on its very next request.
+            </p>
+            <p className="text-ink">
+              Your account and your password are untouched, and no file is deleted. If you still need the
+              access, create a new token and put that one in its place.
+            </p>
+            {revokeError && (
+              <Notice tone="danger" icon="alert">
+                {revokeError}
+              </Notice>
+            )}
+          </div>
+        }
+        onCancel={() => {
+          setRevoking(null)
+          setRevokeError('')
+        }}
+        onConfirm={() => {
+          if (revoking) revoke.mutate(revoking.id)
+        }}
+      />
     </div>
   )
 }

@@ -173,7 +173,7 @@ func (a *API) setupGate(next http.Handler) http.Handler {
 		p := r.URL.Path
 		allowed := p == "/api/v1/setup" ||
 			p == "/api/v1/system/status" ||
-			!strings.HasPrefix(p, "/api/")
+			(!strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/dav"))
 		if allowed {
 			next.ServeHTTP(w, r)
 			return
@@ -188,6 +188,12 @@ func (a *API) setupGate(next http.Handler) http.Handler {
 // requireAuth does that, so public endpoints can still see who is calling.
 func (a *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A bearer token stands in for a session on scripted calls. It never
+		// widens what the account may do, it can only narrow it.
+		if user := a.tokenUser(r); user != nil {
+			next.ServeHTTP(w, withUser(r, user, nil))
+			return
+		}
 		sess, err := a.Session.Resolve(r.Context(), r)
 		if err != nil || sess == nil {
 			next.ServeHTTP(w, r)
@@ -249,6 +255,12 @@ func (a *API) csrfGuard(next http.Handler) http.Handler {
 		// Public share endpoints are reachable without a session and are
 		// protected by the unguessable token in the URL instead.
 		if strings.HasPrefix(r.URL.Path, "/api/v1/public/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// WebDAV and token authenticated calls send credentials explicitly
+		// rather than riding on a cookie, so there is nothing to forge.
+		if strings.HasPrefix(r.URL.Path, "/dav/") || r.Header.Get("Authorization") != "" {
 			next.ServeHTTP(w, r)
 			return
 		}

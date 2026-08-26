@@ -11,6 +11,7 @@ import type { Crumb, Kind, Mount, UsageNode } from '../lib/types'
 import { baseName, bytes, counted, parentPath, percent as percentText, truncateMiddle } from '../lib/format'
 import { useSession } from '../lib/session'
 import { Breadcrumbs } from '../components/Breadcrumbs'
+import DuplicateFinder from '../components/DuplicateFinder'
 import { Icon, colourForKind, iconForKind } from '../components/Icon'
 import { UsageBar, QuotaCard, colourForIndex, type UsageSegment } from '../components/UsageBars'
 import {
@@ -568,6 +569,8 @@ export default function StoragePage() {
                       )}
                     </section>
                   </div>
+
+                  <DuplicateFinder path={path} />
                 </>
               )}
             </div>

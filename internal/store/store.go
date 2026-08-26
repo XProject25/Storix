@@ -90,6 +90,8 @@ var migrations = []string{
 	schemaSQL,
 	// 1.1: the measured storage figure behind the per account quota, in quota.go.
 	quotaSchemaSQL,
+	// 1.2: the credentials scripts and WebDAV clients sign in with, in tokens.go.
+	tokenSchemaSQL,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

@@ -71,12 +71,36 @@ folders Storix may manage, and optionally a domain. Nothing else.
 | **Preview without downloading** | Images, video with seeking, audio, PDF, text, Markdown, JSON, YAML, logs and source code, plus a look inside zip and tar archives. |
 | **Edit in the browser** | A full editor with syntax highlighting for configuration files and scripts. Open, change, save. |
 | **A recycle bin** | Deleting moves to the bin first, with restore, and automatic clean up after a retention period you choose. |
+| **Duplicate files** | Find identical copies under any folder and reclaim the space. Candidates are grouped by size first and only then compared by content, so nothing that merely looks the same is ever offered for deletion. |
 | **Archives** | Create zip, tar.gz and tar archives, and extract them, as background jobs with progress. No SSH needed. |
 | **Share links** | Publish a file or a folder with an expiry, a password and a download limit. Or create an upload request so a client can send you files without an account. |
 | **Accounts without SSH** | Give someone exactly one folder, read only or writable, with a permission set. They never receive server credentials. |
+| **A network drive** | Mount Storix in Windows Explorer, the macOS Finder or a Linux file manager, and work with server files as if they were on the machine in front of you. |
+| **Access tokens** | Scriptable access for backups, rclone and continuous integration. A token is revoked on its own, without changing the account password or signing anybody out. |
 | **Plain language** | The permission dialog asks who can access this, not what the octal mode is. Owner, group and mode bits live behind an Advanced disclosure for the people who want them. |
 | **Updates in place** | The interface reports a new version and installs it, or you run `sudo storix update`. |
 | **Automatic HTTPS** | Point a domain at the server, type it into settings, and a certificate is issued and renewed for you. |
+
+## Mount it as a drive
+
+Storix speaks WebDAV at `/dav/`, so the same folders open in the file manager
+you already use. Sign in with your username and an access token created in the
+interface, not with the account password.
+
+```bash
+# Windows, in a command prompt
+net use Z: http://SERVER:8686/dav/ /user:alice PASTE_TOKEN
+
+# macOS, in Finder press Command K and connect to
+http://SERVER:8686/dav/
+
+# Linux
+sudo mount -t davfs http://SERVER:8686/dav/ /mnt/storix
+```
+
+Windows refuses a WebDAV mount over plain HTTP until a registry value is
+changed, so set up HTTPS first if you can. The full instructions for all three,
+including rclone, are in [docs/WEBDAV.md](docs/WEBDAV.md).
 
 ## How it works
 

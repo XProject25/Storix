@@ -491,3 +491,52 @@ export interface RenamePreview {
   unchanged: number
   valid: number
 }
+
+// ---- 1.2 ------------------------------------------------------------------
+
+export type TokenScope = 'read' | 'write'
+
+export interface ApiToken {
+  id: number
+  name: string
+  prefix: string
+  scope: TokenScope
+  expiresAt?: string
+  lastUsedAt?: string
+  lastUsedIp?: string
+  createdAt: string
+  expired: boolean
+}
+
+export interface DuplicateFile {
+  path: string
+  name: string
+  size: number
+  modified: string
+}
+
+export interface DuplicateGroup {
+  hash: string
+  size: number
+  count: number
+  wasted: number
+  files: DuplicateFile[]
+}
+
+export interface DuplicateReport {
+  path: string
+  groups: DuplicateGroup[]
+  wasted: number
+  scanned: number
+  hashed: number
+  truncated: boolean
+  elapsedMs: number
+}
+
+export interface WebDAVInfo {
+  enabled: boolean
+  url: string
+  windows: string
+  macos: string
+  linux: string
+}

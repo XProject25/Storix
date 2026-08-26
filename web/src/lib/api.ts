@@ -27,12 +27,16 @@ import type {
   TextFile,
   TrashItem,
   TreeNode,
+  ApiToken,
+  DuplicateReport,
   Quota,
   RenamePreview,
   RenameRule,
   UploadRecord,
+  TokenScope,
   UsageReport,
   User,
+  WebDAVInfo,
 } from './types'
 
 export const API_BASE = '/api/v1'
@@ -324,6 +328,13 @@ export const api = {
       method: 'POST',
       body: { paths, rule },
     }),
+
+  // ---- programmatic access and duplicates, added in 1.2 -------------------
+  tokens: () => request<{ tokens: ApiToken[]; webdav: WebDAVInfo }>('/auth/tokens'),
+  createToken: (body: { name: string; scope: TokenScope; expiresIn?: string }) =>
+    request<{ token: ApiToken; secret: string }>('/auth/tokens', { method: 'POST', body }),
+  deleteToken: (id: number) => request<{ ok: boolean }>(`/auth/tokens/${id}`, { method: 'DELETE' }),
+  duplicates: (path: string, min = 1024) => request<DuplicateReport>('/fs/duplicates' + query({ path, min })),
 }
 
 /**

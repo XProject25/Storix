@@ -58,7 +58,9 @@ Read only mounts refuse every mutating call before it reaches the disk.
 
 All endpoints live under `/api/v1`, speak JSON and authenticate with the
 `storix_session` cookie. Mutating requests carry the `X-Storix-CSRF` header,
-matched against the `storix_csrf` cookie.
+matched against the `storix_csrf` cookie. A scripted caller sends an
+`Authorization: Bearer` token instead and carries no cookie at all.
+[API.md](API.md) is the working reference.
 
 Error shape:
 
@@ -83,6 +85,9 @@ POST   /api/v1/auth/totp/enable       confirm 2FA
 POST   /api/v1/auth/totp/disable      turn 2FA off
 GET    /api/v1/auth/sessions          list own sessions
 DELETE /api/v1/auth/sessions/{id}     revoke a session
+GET    /api/v1/auth/tokens            own access tokens, and the mount details
+POST   /api/v1/auth/tokens            create a token, returned once
+DELETE /api/v1/auth/tokens/{id}       revoke a token
 
 GET    /api/v1/fs/list                directory listing
 GET    /api/v1/fs/stat                single entry
@@ -101,6 +106,7 @@ GET    /api/v1/fs/search              recursive search
 GET    /api/v1/fs/du                  recursive size
 GET    /api/v1/fs/disk                volume usage
 GET    /api/v1/fs/usage               what is taking up space under a folder
+GET    /api/v1/fs/duplicates          identical files under a folder
 POST   /api/v1/fs/rename-bulk/preview bulk rename, what would happen
 POST   /api/v1/fs/rename-bulk         bulk rename, apply
 GET    /api/v1/auth/quota             own storage allowance
@@ -160,6 +166,19 @@ GET    /api/v1/public/{token}/thumb
 POST   /api/v1/public/{token}/tus     upload request, tus create
 HEAD   /api/v1/public/{token}/tus/{id}
 PATCH  /api/v1/public/{token}/tus/{id}
+
+OPTIONS  /dav/                        capabilities, class 1 and class 2
+PROPFIND /dav/                        the mounts, as one collection each
+PROPFIND /dav/{path}                  list a folder, or describe a file
+GET      /dav/{path}                  read a file, range aware
+HEAD     /dav/{path}                  size and modification time
+PUT      /dav/{path}                  write a file
+MKCOL    /dav/{path}                  create a folder
+COPY     /dav/{path}                  copy, with the Destination header
+MOVE     /dav/{path}                  move or rename
+DELETE   /dav/{path}                  remove
+LOCK     /dav/{path}                  take a write lock
+UNLOCK   /dav/{path}                  release one
 ```
 
 ## Uploads
@@ -196,3 +215,67 @@ by a background walk rather than recomputed on every request, so a listing
 never waits on a disk scan. An upload is refused before any bytes are written,
 because tus declares the length up front, and a finished upload adds its size
 to the running total without a rescan. A quota of zero means no limit.
+
+## Programmatic access
+
+A script authenticates with a token in the `Authorization` header instead of a
+session cookie. The token reads as `sxp_<prefix>_<secret>`: a fixed marker that
+makes one recognisable in a log file, an eight character prefix and a thirty
+two character secret. It is handed over once by `POST /api/v1/auth/tokens` and
+is never recoverable afterwards.
+
+Only the prefix is stored in the clear. It is the indexed column the lookup
+finds a row by, it is what the list screen and the audit trail name, and it
+carries no ability to authenticate on its own. The secret is stored as a
+SHA-256 digest and compared in constant time, the same treatment session
+identifiers and share tokens get, so a copy of the database cannot be replayed
+against a running server. `api_tokens` holds both, along with the scope, the
+optional expiry and a last used stamp written back at most once a minute.
+
+A token narrows an account, it never widens one. `tokNarrow` hands a `write`
+token the account as loaded and a `read` token a copy carrying only `view` and
+`download`. An administrator needs one step more, since that role is allowed
+everything without its permissions being consulted: the copy is demoted out of
+the role as well, and the served folders are carried across as read only mounts
+so the same tree stays visible with none of the write paths open. Revoking a
+token leaves the password, the open sessions and the account untouched, which
+is the point of having them.
+
+`tokenUser` runs ahead of the session cookie in `authenticate`, so a request
+carrying both is treated as the token call it is. It accepts a bearer token,
+which is what a script sends, and Basic credentials with the token as the
+password, which is all a WebDAV client can offer. A Basic username has to name
+the account the token belongs to, so a mount cannot quietly land somewhere
+other than where the person typing it expected. Token calls skip the CSRF
+double submit check because there is no ambient credential to forge: a page on
+another site cannot make the browser attach an `Authorization` header it does
+not know. The exemption is keyed on that header being present, not on a route,
+so it cannot be inherited by a cookie request.
+
+## Network drive
+
+WebDAV is served at `/dav/` by `golang.org/x/net/webdav`, so PROPFIND bodies,
+lock tokens and `Destination` headers are handled by a tested implementation
+rather than by hand. Storix supplies the two pieces that are its own: a
+`webdav.FileSystem` that resolves every name through the same guarded `vfs`
+layer the API uses, and authentication through `TokenAuthUser`, the same
+resolver the API middleware runs, reading the Basic password as an access
+token. Nothing below it can tell whether a call arrived from the browser or
+from Explorer, so containment, read only mounts, the deny list and the audit
+trail all apply unchanged.
+
+The top level of the tree is not a directory on disk. It is the mount list,
+rendered as one collection per folder the account owns, which is what makes
+`/dav/` browsable in a file manager without exposing anything above a mount.
+
+Locks are held in memory, in `webdav.NewMemLS()`. Windows and macOS both take a
+LOCK before their first PUT and treat a refusal as a read only volume, so
+answering locks is not optional. Keeping them in memory rather than in SQLite
+is the right trade for a single process product: a stale lock in a database
+outlives the client that took it and has to be reaped, while a restart of the
+service is exactly the moment those clients are gone too.
+
+Two guards in `middleware.go` bracket the tree. `setupGate` closes `/dav`
+entirely until the first run wizard has completed, and `csrfGuard` lets it
+through, since a WebDAV client sends its credentials on every request and never
+rides on a cookie.
