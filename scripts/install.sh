@@ -12,7 +12,10 @@
 set -euo pipefail
 
 REPO="${STORIX_REPO:-XProject25/Storix}"
-VERSION="${STORIX_VERSION:-latest}"
+# Deliberately not called VERSION: /etc/os-release defines NAME, VERSION and
+# ID, so a plain name here would be silently overwritten by the distribution
+# detection below.
+WANTED="${STORIX_VERSION:-latest}"
 PORT="${STORIX_PORT:-8686}"
 RUN_USER="${STORIX_USER:-storix}"
 BIN_PATH="/usr/bin/storix"
@@ -53,10 +56,12 @@ detect_os() {
     if [ ! -r /etc/os-release ]; then
         fail "This system does not look like a supported Linux distribution."
     fi
+    # Read the values in subshells. Sourcing it directly would drop NAME,
+    # VERSION and ID into this script and clobber our own variables.
     # shellcheck disable=SC1091
-    . /etc/os-release
-    OS_ID="${ID:-unknown}"
-    OS_NAME="${PRETTY_NAME:-${OS_ID}}"
+    OS_ID="$(. /etc/os-release 2>/dev/null && printf '%s' "${ID:-unknown}")"
+    # shellcheck disable=SC1091
+    OS_NAME="$(. /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-${ID:-unknown}}")"
     case "${OS_ID}" in
         ubuntu|debian|linuxmint|pop|raspbian|elementary|zorin)
             ok "Detected ${OS_NAME}"
@@ -109,17 +114,31 @@ need_tools() {
 
 resolve_release() {
     local api url
-    if [ "${VERSION}" = "latest" ]; then
+    if [ "${WANTED}" = "latest" ]; then
         api="https://api.github.com/repos/${REPO}/releases/latest"
     else
-        api="https://api.github.com/repos/${REPO}/releases/tags/${VERSION#v}"
+        api="https://api.github.com/repos/${REPO}/releases/tags/${WANTED#v}"
     fi
     local body
     body="$(curl -fsSL -H 'Accept: application/vnd.github+json' "${api}" 2>/dev/null || true)"
-    if [ -z "${body}" ]; then
-        fail "Could not reach the release feed for ${REPO}. Check the server internet connection."
-    fi
     RELEASE_TAG="$(printf '%s' "${body}" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)"
+
+    # The API allows only 60 unauthenticated calls an hour per address, and a
+    # server behind a shared address can be out of budget through no fault of
+    # its own. Fall back to the plain release page, which redirects to the
+    # newest tag and has no such limit.
+    if [ -z "${RELEASE_TAG}" ]; then
+        local effective
+        if [ "${WANTED}" = "latest" ]; then
+            effective="$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" 2>/dev/null || true)"
+            RELEASE_TAG="${effective##*/tag/}"
+            [ "${RELEASE_TAG}" = "${effective}" ] && RELEASE_TAG=""
+        else
+            RELEASE_TAG="${WANTED}"
+            case "${RELEASE_TAG}" in v*) ;; *) RELEASE_TAG="v${RELEASE_TAG}" ;; esac
+        fi
+    fi
+
     if [ -z "${RELEASE_TAG}" ]; then
         printf '\n'
         warn "No published release was found for ${REPO}."
@@ -127,14 +146,22 @@ resolve_release() {
         printf '\n      git clone https://github.com/%s.git\n      cd Storix && make install\n\n' "${REPO}"
         exit 1
     fi
+
     RELEASE_VERSION="${RELEASE_TAG#v}"
     ASSET="storix_${RELEASE_VERSION}_linux_${ARCH}.tar.gz"
     url="$(printf '%s' "${body}" | grep -o "https://[^\"]*${ASSET}" | head -1)"
     if [ -z "${url}" ]; then
+        # Release download URLs are predictable, so the API is never required.
+        url="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/${ASSET}"
+    fi
+    if ! curl -fsSL -o /dev/null -r 0-0 "${url}" 2>/dev/null; then
         fail "Release ${RELEASE_TAG} has no build for linux/${ARCH}."
     fi
     ASSET_URL="${url}"
     SUMS_URL="$(printf '%s' "${body}" | grep -o 'https://[^"]*checksums\.txt' | head -1)"
+    if [ -z "${SUMS_URL}" ]; then
+        SUMS_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/checksums.txt"
+    fi
 }
 
 download_and_verify() {
@@ -362,7 +389,7 @@ main() {
         case "$1" in
             --port)    PORT="$2"; shift 2 ;;
             --user)    RUN_USER="$2"; shift 2 ;;
-            --version) VERSION="$2"; shift 2 ;;
+            --version) WANTED="$2"; shift 2 ;;
             --yes|-y)  shift ;;  # accepted for scripted installs, nothing is ever prompted
             --help|-h)
                 printf 'Storix installer\n\n  --port N       listen port, default 8686\n  --user NAME    service account, default storix, use root for full access\n  --version TAG  install a specific release\n  --yes          do not ask anything\n\n'
