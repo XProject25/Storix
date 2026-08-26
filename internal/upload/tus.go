@@ -56,6 +56,12 @@ type Deps struct {
 	Logger  *slog.Logger
 	MaxSize int64
 	Expiry  time.Duration
+	// QuotaCheck, when set, reports whether a user may add this many bytes.
+	// It is consulted when a transfer is declared, which is the only moment
+	// the full size is known before any of it lands on disk.
+	QuotaCheck func(ctx context.Context, userID int64, size int64) (ok bool, remaining int64, err error)
+	// QuotaAdd, when set, records bytes that landed.
+	QuotaAdd func(ctx context.Context, userID int64, bytes int64)
 }
 
 // Manager serves the tus endpoints.
@@ -138,6 +144,20 @@ func (m *Manager) Create(w http.ResponseWriter, r *http.Request, actor Actor) {
 	if limit > 0 && length > limit {
 		http.Error(w, "Upload exceeds the size limit", http.StatusRequestEntityTooLarge)
 		return
+	}
+	if m.deps.QuotaCheck != nil {
+		ok, remaining, err := m.deps.QuotaCheck(r.Context(), actor.UserID, length)
+		switch {
+		case err != nil:
+			// An allowance that cannot be read is not permission to ignore it.
+			m.deps.Logger.Warn("quota check failed", "user", actor.UserID, "err", err)
+			http.Error(w, "Your storage allowance could not be checked", http.StatusInternalServerError)
+			return
+		case !ok:
+			http.Error(w, "Your storage allowance is full, "+quotaSizeText(remaining)+" remaining",
+				http.StatusRequestEntityTooLarge)
+			return
+		}
 	}
 
 	meta := parseMetadata(r.Header.Get(hdrMetadata))
@@ -454,6 +474,13 @@ func (m *Manager) finalize(ctx context.Context, sess *store.UploadSession, loc *
 	sess.FinalPath = finalPath
 	m.forget(sess.ID)
 
+	// The storage figure moves with the file so an allowance is current for
+	// the next transfer. Replacing an existing file overstates the figure by
+	// what the old copy held, which the next full measurement corrects.
+	if m.deps.QuotaAdd != nil {
+		m.deps.QuotaAdd(ctx, sess.UserID, sess.Size)
+	}
+
 	if m.deps.Events != nil {
 		m.deps.Events.Publish(sess.UserID, events.Event{
 			Type: "upload.done",
@@ -639,6 +666,30 @@ func randomID() (string, error) {
 		out[i*2+1] = hex[b&0x0f]
 	}
 	return string(out), nil
+}
+
+// quotaSizeText renders a byte count the short way the interface does, so a
+// refused upload reads like the storage figure on screen rather than a raw
+// number of bytes.
+func quotaSizeText(n int64) string {
+	if n <= 0 {
+		return "0 B"
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	size := float64(n)
+	idx := 0
+	for size >= 1024 && idx < len(units)-1 {
+		size /= 1024
+		idx++
+	}
+	digits := 2
+	switch {
+	case idx == 0 || size >= 100:
+		digits = 0
+	case size >= 10:
+		digits = 1
+	}
+	return strconv.FormatFloat(size, 'f', digits, 64) + " " + units[idx]
 }
 
 // writeVFSError maps guarded file system errors onto tus friendly statuses.

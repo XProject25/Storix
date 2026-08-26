@@ -8,6 +8,7 @@ import { ApiError, api } from '../lib/api'
 import { baseName, truncateMiddle } from '../lib/format'
 import type { Share, ShareKind } from '../lib/types'
 import { Icon, colourForKind, iconForKind } from './Icon'
+import { QRCode } from './QRCode'
 import { Button, Field, IconButton, Modal, Select, Toggle, useToast } from './ui'
 
 // ---- helpers shared with the links screen ------------------------------------
@@ -326,22 +327,34 @@ export function ShareDialog({ open, path, isDir, onClose, onCreated, share, onUp
       >
         <div className="space-y-4">
           <TargetRow name={result.name} path={result.path} isDir={result.isDir} />
-          <div>
-            <label className="sx-label" htmlFor="sx-share-url">
-              Address
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="sx-share-url"
-                className="sx-input font-mono text-xs"
-                value={url}
-                readOnly
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <IconButton icon="copy" label="Copy link" onClick={() => void copy(url)} />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="min-w-0 flex-1 space-y-4">
+              <div>
+                <label className="sx-label" htmlFor="sx-share-url">
+                  Address
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="sx-share-url"
+                    className="sx-input font-mono text-xs"
+                    value={url}
+                    readOnly
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                  <IconButton icon="copy" label="Copy link" onClick={() => void copy(url)} />
+                </div>
+              </div>
+              <p className="text-sm text-muted">
+                {consequence(result.kind, result.isDir, result.expiresAt, result.hasPassword)}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
+              <div className="rounded-xl bg-white p-1.5 text-black">
+                <QRCode value={url} size={150} />
+              </div>
+              <p className="w-[162px] text-center text-[11px] text-faint">Point a phone camera at this</p>
             </div>
           </div>
-          <p className="text-sm text-muted">{consequence(result.kind, result.isDir, result.expiresAt, result.hasPassword)}</p>
         </div>
       </Modal>
     )

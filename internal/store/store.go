@@ -88,6 +88,8 @@ func (s *Store) Close() error {
 // PRAGMA user_version so upgrades never re-run earlier steps.
 var migrations = []string{
 	schemaSQL,
+	// 1.1: the measured storage figure behind the per account quota, in quota.go.
+	quotaSchemaSQL,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

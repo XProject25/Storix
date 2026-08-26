@@ -7,10 +7,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type * as MonacoApi from 'monaco-editor'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
-import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
-import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
-import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { ApiError, api } from '../lib/api'
 import { baseName, bytes, joinPath, parentPath, smartDate } from '../lib/format'
 import type { TextFile } from '../lib/types'
@@ -29,35 +25,28 @@ export interface CodeEditorProps {
 // ---- worker wiring ----------------------------------------------------------
 
 interface WorkerFactory {
-  getWorker(workerId: string, label: string): Worker
+  getWorker(): Worker
 }
 
 let workersConfigured = false
 
-/** configureWorkers points Monaco at the workers Vite bundles for us. */
+/**
+ * configureWorkers points Monaco at the one worker Storix bundles.
+ *
+ * Only the base editor worker is shipped. The language service workers exist
+ * to give TypeScript, JSON, CSS and HTML full IntelliSense, and the TypeScript
+ * one alone is six megabytes of generated code. Storix is used to edit server
+ * configuration, YAML, shell scripts and logs, where syntax highlighting is
+ * what matters, and highlighting is done in the main worker for every language
+ * Monaco knows. Dropping the rest keeps the download small and the build sane.
+ */
 function configureWorkers(): void {
   if (workersConfigured) return
   workersConfigured = true
   const host = self as unknown as { MonacoEnvironment: WorkerFactory }
   host.MonacoEnvironment = {
-    getWorker(_workerId, label) {
-      switch (label) {
-        case 'json':
-          return new jsonWorker()
-        case 'css':
-        case 'scss':
-        case 'less':
-          return new cssWorker()
-        case 'html':
-        case 'handlebars':
-        case 'razor':
-          return new htmlWorker()
-        case 'typescript':
-        case 'javascript':
-          return new tsWorker()
-        default:
-          return new editorWorker()
-      }
+    getWorker() {
+      return new editorWorker()
     },
   }
 }

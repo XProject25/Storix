@@ -16,7 +16,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
-import { bytes, parentPath, smartDate } from '../lib/format'
+import { ago, bytes, parentPath, smartDate } from '../lib/format'
 import type { Entry, SortField, SortOrder } from '../lib/types'
 import { Icon, colourForKind, iconForKind } from './Icon'
 import { Checkbox, Skeleton } from './ui'
@@ -25,9 +25,30 @@ import { Checkbox, Skeleton } from './ui'
 export const STORIX_DRAG_TYPE = 'application/x-storix-paths'
 
 export const ROW_HEIGHT = 44
+/** Under 768px a row carries a second line of text and has to fit a finger. */
+const ROW_HEIGHT_NARROW = 52
+const NARROW_QUERY = '(max-width: 767px)'
 const LIST_PADDING = 4
 const VIRTUAL_THRESHOLD = 300
 const OVERSCAN = 10
+
+/**
+ * useListRowHeight follows the row height the stylesheet is using, so the
+ * windowed list puts rows where the browser actually draws them.
+ */
+function useListRowHeight(): number {
+  const [height, setHeight] = useState(() =>
+    window.matchMedia(NARROW_QUERY).matches ? ROW_HEIGHT_NARROW : ROW_HEIGHT,
+  )
+  useEffect(() => {
+    const media = window.matchMedia(NARROW_QUERY)
+    const update = () => setHeight(media.matches ? ROW_HEIGHT_NARROW : ROW_HEIGHT)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return height
+}
 
 /** SelectModifiers tells the page which selection gesture was used. */
 export interface SelectModifiers {
@@ -227,10 +248,21 @@ function SortHeader({
 
 // ---- row ---------------------------------------------------------------------
 
-const CELL_SIZE = 'w-24 shrink-0 text-right tabular-nums'
+// Under 768px every column but the name gives way to the second line of the
+// row, which says the same thing in fewer words.
+const CELL_SIZE = 'hidden w-24 shrink-0 text-right tabular-nums md:block'
+const CELL_SIZE_HEAD = 'hidden w-24 shrink-0 justify-end md:flex'
 const CELL_TYPE = 'hidden w-28 shrink-0 lg:block'
 const CELL_MODIFIED = 'hidden w-40 shrink-0 md:block'
 const CELL_MODE = 'hidden w-28 shrink-0 xl:block'
+
+/** rowSummary is the second line: what the hidden columns would have said. */
+function rowSummary(entry: Entry): string {
+  const when = ago(entry.modified)
+  if (entry.isDir) return when
+  const size = bytes(entry.size)
+  return when ? `${size}, ${when}` : size
+}
 
 interface RowProps {
   entry: Entry
@@ -298,14 +330,21 @@ function FileRow({
         onDropOnFolder(entry, event)
       }}
       className={clsx(
-        'sx-row group text-sm',
+        'sx-row sx-row-file group text-sm',
         over && 'ring-2 ring-primary bg-primary/12',
         focused && !selected && 'ring-1 ring-primary/45',
         entry.hidden && 'opacity-65',
       )}
       data-selected={selected ? 'true' : undefined}
     >
-      <span className="shrink-0" onClick={(event) => event.stopPropagation()}>
+      {/* The box itself stays small. The area around it is what a finger hits. */}
+      <span
+        className="sx-touch flex shrink-0 items-center justify-center"
+        onClick={(event) => {
+          event.stopPropagation()
+          onSelect(entry, { ctrlKey: true, metaKey: false, shiftKey: false })
+        }}
+      >
         <Checkbox
           checked={selected}
           onChange={() => onSelect(entry, { ctrlKey: true, metaKey: false, shiftKey: false })}
@@ -333,8 +372,10 @@ function FileRow({
               )}
               {entry.readOnly && <Icon name="lock" size={12} className="shrink-0 text-faint" />}
             </div>
-            {showPath && (
+            {showPath ? (
               <div className="truncate text-xs text-faint">{parentPath(entry.path) || '/'}</div>
+            ) : (
+              <div className="truncate text-xs text-muted md:hidden">{rowSummary(entry)}</div>
             )}
           </>
         )}
@@ -375,6 +416,7 @@ export function FileList({
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(600)
   const [band, setBand] = useState<{ top: number; bottom: number } | null>(null)
+  const rowHeight = useListRowHeight()
 
   const virtual = entries.length > VIRTUAL_THRESHOLD
 
@@ -395,27 +437,27 @@ export function FileList({
     if (!node) return
     const index = entries.findIndex((entry) => entry.path === focused)
     if (index < 0) return
-    const top = index * ROW_HEIGHT
-    const bottom = top + ROW_HEIGHT
+    const top = index * rowHeight
+    const bottom = top + rowHeight
     if (top < node.scrollTop) node.scrollTop = Math.max(0, top - LIST_PADDING)
     else if (bottom > node.scrollTop + node.clientHeight) node.scrollTop = bottom - node.clientHeight + LIST_PADDING
-  }, [focused, entries])
+  }, [focused, entries, rowHeight])
 
   const range = useMemo(() => {
     if (!virtual) return { start: 0, end: entries.length }
-    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-    const end = Math.min(entries.length, Math.ceil((scrollTop + viewport) / ROW_HEIGHT) + OVERSCAN)
+    const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
+    const end = Math.min(entries.length, Math.ceil((scrollTop + viewport) / rowHeight) + OVERSCAN)
     return { start, end }
-  }, [virtual, scrollTop, viewport, entries.length])
+  }, [virtual, scrollTop, viewport, entries.length, rowHeight])
 
   const indexAt = useCallback(
     (clientY: number): number => {
       const node = contentRef.current
       if (!node) return -1
       const rect = node.getBoundingClientRect()
-      return Math.floor((clientY - rect.top - LIST_PADDING) / ROW_HEIGHT)
+      return Math.floor((clientY - rect.top - LIST_PADDING) / rowHeight)
     },
-    [],
+    [rowHeight],
   )
 
   const startMarquee = useCallback(
@@ -490,17 +532,10 @@ export function FileList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line px-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-faint">
-        <span className="w-[18px] shrink-0" />
+        <span className="w-10 shrink-0 lg:w-[18px]" />
         <span className="w-7 shrink-0" />
         <SortHeader field="name" label="Name" sort={sort} order={order} onSort={onSort} className="min-w-0 flex-1" />
-        <SortHeader
-          field="size"
-          label="Size"
-          sort={sort}
-          order={order}
-          onSort={onSort}
-          className={clsx(CELL_SIZE, 'flex justify-end')}
-        />
+        <SortHeader field="size" label="Size" sort={sort} order={order} onSort={onSort} className={CELL_SIZE_HEAD} />
         <SortHeader field="kind" label="Type" sort={sort} order={order} onSort={onSort} className={CELL_TYPE} />
         <SortHeader
           field="modified"
@@ -531,7 +566,7 @@ export function FileList({
         <div
           ref={contentRef}
           className="relative px-1 py-1"
-          style={virtual ? { height: entries.length * ROW_HEIGHT } : undefined}
+          style={virtual ? { height: entries.length * rowHeight } : undefined}
         >
           {loading && entries.length === 0 ? (
             <div className="space-y-1.5 px-2 py-1.5">
@@ -545,7 +580,7 @@ export function FileList({
               ))}
             </div>
           ) : virtual ? (
-            <div style={{ transform: `translateY(${range.start * ROW_HEIGHT}px)` }}>{rows}</div>
+            <div style={{ transform: `translateY(${range.start * rowHeight}px)` }}>{rows}</div>
           ) : (
             rows
           )}

@@ -5,6 +5,7 @@
 import clsx from 'clsx'
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,12 +28,19 @@ export interface DetailsPanelProps {
   entries: Entry[]
   onClose: () => void
   onAction: (action: string, entry: Entry) => void
+  /**
+   * Under 1024px there is no room beside the listing, so the panel rises over
+   * it as a sheet instead: no resize edge, a drag handle, and Escape closes it.
+   */
+  sheet?: boolean
 }
 
 type TabId = 'details' | 'preview' | 'activity' | 'shares'
 
 const MIN_WIDTH = 280
 const MAX_WIDTH = 560
+/** How far the sheet has to be pulled down before it closes. */
+const SHEET_DISMISS = 96
 
 // ---- small pieces -----------------------------------------------------------
 
@@ -368,7 +376,7 @@ function SharesTab({
 
 // ---- panel ------------------------------------------------------------------
 
-export default function DetailsPanel({ entry, entries, onClose, onAction }: DetailsPanelProps) {
+export default function DetailsPanel({ entry, entries, onClose, onAction, sheet }: DetailsPanelProps) {
   const { isAdmin } = useSession()
   const storedWidth = useApp((state) => state.detailsWidth)
   const setDetailsWidth = useApp((state) => state.setDetailsWidth)
@@ -377,9 +385,20 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
   const dragStart = useRef<{ x: number; width: number } | null>(null)
   const [tab, setTab] = useState<TabId>('details')
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [sheetDrag, setSheetDrag] = useState(0)
+  const sheetStart = useRef<number | null>(null)
 
   const width = dragWidth ?? storedWidth
   const multiple = entries.length > 1
+
+  useEffect(() => {
+    if (!sheet) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [sheet, onClose])
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -424,6 +443,33 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
     [setDetailsWidth, width],
   )
 
+  // ---- sheet handle ---------------------------------------------------------
+
+  const onSheetDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    sheetStart.current = event.clientY
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [])
+
+  const onSheetMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = sheetStart.current
+    if (start === null) return
+    setSheetDrag(Math.max(0, event.clientY - start))
+  }, [])
+
+  const endSheetDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (sheetStart.current === null) return
+      sheetStart.current = null
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      const travelled = sheetDrag
+      setSheetDrag(0)
+      if (travelled > SHEET_DISMISS) onClose()
+    },
+    [onClose, sheetDrag],
+  )
+
   const tabs: Array<{ id: TabId; label: string }> = useMemo(() => {
     const list: Array<{ id: TabId; label: string }> = [
       { id: 'details', label: 'Details' },
@@ -451,24 +497,42 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
   return (
     <aside
       aria-label="Details"
-      className="relative flex h-full shrink-0 flex-col overflow-hidden border-l border-line bg-surface"
-      style={{ width }}
+      className={clsx(
+        'flex flex-col overflow-hidden bg-surface',
+        sheet
+          ? 'sx-sheet fixed inset-x-0 bottom-0 z-[45] animate-slide-up rounded-t-3xl border-t border-line shadow-pop'
+          : 'relative h-full shrink-0 border-l border-line',
+      )}
+      style={sheet ? { transform: sheetDrag > 0 ? `translateY(${sheetDrag}px)` : undefined } : { width }}
     >
-      <div
-        role="separator"
-        aria-label="Resize the details panel"
-        aria-orientation="vertical"
-        aria-valuenow={width}
-        aria-valuemin={MIN_WIDTH}
-        aria-valuemax={MAX_WIDTH}
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onKeyDown={nudge}
-        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40"
-      />
+      {sheet ? (
+        <div
+          aria-hidden="true"
+          onPointerDown={onSheetDown}
+          onPointerMove={onSheetMove}
+          onPointerUp={endSheetDrag}
+          onPointerCancel={endSheetDrag}
+          className="flex h-7 shrink-0 cursor-grab touch-none items-center justify-center"
+        >
+          <span className="h-1 w-10 rounded-full bg-line" />
+        </div>
+      ) : (
+        <div
+          role="separator"
+          aria-label="Resize the details panel"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onKeyDown={nudge}
+          className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40"
+        />
+      )}
 
       {multiple ? (
         <>
@@ -477,7 +541,7 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
               <h2 className="truncate text-sm font-semibold text-ink">{counted(entries.length, 'item')}</h2>
               <p className="text-xs text-faint">Selected in this folder</p>
             </div>
-            <IconButton icon="close" label="Close details" onClick={onClose} />
+            <IconButton icon="close" label="Close details" className="sx-touch" onClick={onClose} />
           </header>
           <SelectionSummary entries={entries} />
         </>
@@ -485,7 +549,7 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
         <>
           <header className="flex items-center gap-3 border-b border-line px-4 py-3">
             <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">Details</h2>
-            <IconButton icon="close" label="Close details" onClick={onClose} />
+            <IconButton icon="close" label="Close details" className="sx-touch" onClick={onClose} />
           </header>
           <div className="flex min-h-0 flex-1 items-center justify-center">
             <EmptyState
@@ -517,7 +581,7 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
                 {entry.hidden && <span className="sx-chip">Hidden</span>}
               </div>
             </div>
-            <IconButton icon="close" label="Close details" onClick={onClose} />
+            <IconButton icon="close" label="Close details" className="sx-touch" onClick={onClose} />
           </header>
 
           <div className="shrink-0 border-b border-line p-3">
@@ -543,7 +607,7 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
               <IconButton
                 icon="more"
                 label="More actions"
-                className="shrink-0"
+                className="sx-touch shrink-0"
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect()
                   setMenu({ x: rect.right, y: rect.bottom + 6 })
@@ -563,7 +627,7 @@ export default function DetailsPanel({ entry, entries, onClose, onAction }: Deta
                 aria-controls={`sx-details-panel-${item.id}`}
                 onClick={() => setTab(item.id)}
                 className={clsx(
-                  'relative h-9 rounded-lg px-2.5 text-xs transition-colors',
+                  'sx-touch relative h-9 rounded-lg px-2.5 text-xs transition-colors',
                   activeTab === item.id ? 'text-ink' : 'text-muted hover:text-ink',
                 )}
               >

@@ -15,6 +15,7 @@ const FavoritesPage = lazy(() => import('./pages/FavoritesPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
 const TransfersPage = lazy(() => import('./pages/TransfersPage'))
 const TrashPage = lazy(() => import('./pages/TrashPage'))
+const StoragePage = lazy(() => import('./pages/StoragePage'))
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="shares" element={<SharesPage />} />
           <Route path="transfers" element={<TransfersPage />} />
           <Route path="trash" element={<TrashPage />} />
+          <Route path="storage" element={<StoragePage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

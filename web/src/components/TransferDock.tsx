@@ -73,7 +73,7 @@ export function TransferControls({ transfer }: { transfer: Transfer }) {
         <IconButton
           icon="pause"
           size={14}
-          className="h-7 w-7"
+          className="sx-touch h-7 w-7"
           label={`Pause ${name}`}
           onClick={() => pause(transfer.id)}
         />
@@ -82,7 +82,7 @@ export function TransferControls({ transfer }: { transfer: Transfer }) {
         <IconButton
           icon="play"
           size={14}
-          className="h-7 w-7"
+          className="sx-touch h-7 w-7"
           label={`Resume ${name}`}
           onClick={() => resume(transfer.id)}
         />
@@ -91,7 +91,7 @@ export function TransferControls({ transfer }: { transfer: Transfer }) {
         <IconButton
           icon="refresh"
           size={14}
-          className="h-7 w-7"
+          className="sx-touch h-7 w-7"
           label={`Retry ${name}`}
           onClick={() => retry(transfer.id)}
         />
@@ -101,7 +101,7 @@ export function TransferControls({ transfer }: { transfer: Transfer }) {
           icon="close"
           size={14}
           tone="danger"
-          className="h-7 w-7"
+          className="sx-touch h-7 w-7"
           label={`Cancel ${name}`}
           onClick={() => cancel(transfer.id)}
         />
@@ -221,7 +221,7 @@ export default function TransferDock() {
   return (
     <section
       aria-label="Transfers"
-      className="sx-panel fixed bottom-4 right-4 z-[65] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden animate-slide-up"
+      className="sx-panel sx-dock fixed inset-x-2 bottom-2 z-[65] overflow-hidden animate-slide-up sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[380px] sm:max-w-[calc(100vw-2rem)]"
     >
       <div className={clsx('flex h-12 items-center gap-2.5 px-3.5', open && 'border-b border-line')}>
         <span
@@ -244,13 +244,13 @@ export default function TransferDock() {
         <IconButton
           icon={open ? 'chevron-down' : 'chevron-up'}
           size={16}
-          className="h-8 w-8"
+          className="sx-touch h-8 w-8"
           label={open ? 'Collapse transfers' : 'Expand transfers'}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         />
         {!busy && (
-          <IconButton icon="close" size={15} className="h-8 w-8" label="Close transfers" onClick={dismiss} />
+          <IconButton icon="close" size={15} className="sx-touch h-8 w-8" label="Close transfers" onClick={dismiss} />
         )}
       </div>
 
@@ -271,7 +271,7 @@ export default function TransferDock() {
             <Progress value={totals.percent} />
           </div>
 
-          <ul className="sx-scroll max-h-[320px] divide-y divide-line py-0.5">
+          <ul className="sx-scroll max-h-[40vh] divide-y divide-line py-0.5 sm:max-h-[320px]">
             {items.map((item) => (
               <DockRow key={item.id} transfer={item} />
             ))}

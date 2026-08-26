@@ -6,6 +6,54 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.1.0] - 2026-08-26
+
+### Added
+
+- **Storage insight.** A Storage screen answers "what is taking up space":
+  the biggest folders as a stacked bar you can drill into, the largest
+  individual files anywhere in the tree, and a breakdown by file type. The
+  whole report comes from one walk rather than one scan per folder.
+- **Bulk rename.** Find and replace with optional regular expressions, add a
+  prefix or a suffix, number a selection, or change case, all with a live
+  preview that shows every old name beside its new one before anything moves.
+  Conflicts are detected against both the disk and the rest of the batch, and
+  a batch that swaps two names is applied through a temporary name so nothing
+  is overwritten. Numbering keeps the file extension.
+- **Storage allowances that are enforced.** A per account quota is now checked
+  before an upload starts, so a transfer is refused up front instead of
+  filling the disk and failing at the end. The figure is measured in the
+  background and updated as uploads land, so no request waits on a disk scan.
+- **A QR code for every share link,** so a link can be handed to a phone
+  without typing it. The encoder is written into Storix, there is no extra
+  dependency and the page works offline.
+
+### Changed
+
+- **The interface works on a phone.** Below 1024px the details panel becomes a
+  bottom sheet, below 768px the file table folds into two readable lines per
+  row with 52px targets, the toolbar scrolls horizontally, and every control
+  has a 40px touch floor. No horizontal page scroll at any width.
+- The editor now ships only Monaco's base worker. The TypeScript language
+  service alone was six megabytes of generated code, and Storix is used to
+  edit configuration, YAML, shell scripts and logs, where highlighting is what
+  matters. The download is seven megabytes smaller and the build is twice as
+  fast.
+
+### Fixed
+
+- Numbering a selection dropped the file extension, so IMG_001.JPG became a
+  bare holiday-001 that the system no longer knew how to open. The pattern now
+  names the base and the extension follows, unless the pattern supplies one.
+- The uploads section of the architecture notes described a staging directory
+  that Storix does not use. Partial data is written into the destination as a
+  hidden .storix-<id>.part file so finishing is one rename, not a second copy.
+
+### Internal
+
+- `internal/store` and `internal/upload` now have their own tests, the last
+  two packages without any. The suite is 134 tests.
+
 ## [1.0.1] - 2026-08-26
 
 Fixes found by installing on a live Ubuntu 22.04 server that also runs an
@@ -121,5 +169,6 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.1.0]: https://github.com/XProject25/Storix/releases/tag/v1.1.0
 [1.0.1]: https://github.com/XProject25/Storix/releases/tag/v1.0.1
 [1.0.0]: https://github.com/XProject25/Storix/releases/tag/v1.0.0

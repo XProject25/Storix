@@ -34,6 +34,13 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/fs/du", a.requirePerm(store.PermView, a.handleDu))
 	mux.HandleFunc("GET /api/v1/fs/disk", a.requirePerm(store.PermView, a.handleDisk))
 	mux.HandleFunc("GET /api/v1/fs/tree", a.requirePerm(store.PermView, a.handleTree))
+	mux.HandleFunc("GET /api/v1/fs/usage", a.requirePerm(store.PermView, a.handleUsage))
+
+	// ---- bulk rename and quotas ---------------------------------------------
+	mux.HandleFunc("POST /api/v1/fs/rename-bulk/preview", a.requirePerm(store.PermRename, a.handleRenameBulkPreview))
+	mux.HandleFunc("POST /api/v1/fs/rename-bulk", a.requirePerm(store.PermRename, a.handleRenameBulk))
+	mux.HandleFunc("GET /api/v1/auth/quota", a.requireAuth(a.handleMyQuota))
+	mux.HandleFunc("GET /api/v1/users/{id}/quota", a.requirePerm(store.PermUsers, a.handleUserQuota))
 
 	// ---- reading content ----------------------------------------------------
 	mux.HandleFunc("GET /api/v1/fs/download", a.requirePerm(store.PermDownload, a.handleDownload))

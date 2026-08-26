@@ -27,7 +27,11 @@ import type {
   TextFile,
   TrashItem,
   TreeNode,
+  Quota,
+  RenamePreview,
+  RenameRule,
   UploadRecord,
+  UsageReport,
   User,
 } from './types'
 
@@ -307,6 +311,18 @@ export const api = {
     request<{ ok: boolean; restartRequired: boolean; url: string; message?: string }>('/system/domain', {
       method: 'POST',
       body,
+    }),
+
+  // ---- storage insight and bulk rename, added in 1.1 ---------------------
+  usage: (path: string, limit = 40) => request<UsageReport>('/fs/usage' + query({ path, limit })),
+  quota: () => request<Quota>('/auth/quota'),
+  userQuota: (id: number) => request<Quota>(`/users/${id}/quota`),
+  renamePreview: (paths: string[], rule: RenameRule) =>
+    request<RenamePreview>('/fs/rename-bulk/preview', { method: 'POST', body: { paths, rule } }),
+  renameBulk: (paths: string[], rule: RenameRule) =>
+    request<{ renamed: number; failed: Array<{ path: string; reason: string }> }>('/fs/rename-bulk', {
+      method: 'POST',
+      body: { paths, rule },
     }),
 }
 

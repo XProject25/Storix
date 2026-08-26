@@ -424,3 +424,70 @@ export type ConflictPolicy = 'rename' | 'overwrite' | 'skip'
 export type ViewMode = 'list' | 'grid' | 'gallery'
 export type SortField = 'name' | 'size' | 'modified' | 'kind' | 'ext'
 export type SortOrder = 'asc' | 'desc'
+
+// ---- 1.1 ------------------------------------------------------------------
+
+export interface Quota {
+  limit: number
+  used: number
+  files: number
+  percent: number
+  remaining: number
+  computedAt: string
+  stale: boolean
+}
+
+export interface UsageNode {
+  name: string
+  path: string
+  bytes: number
+  files: number
+  isDir: boolean
+  percent: number
+  kind: Kind
+}
+
+export interface UsageReport {
+  path: string
+  bytes: number
+  files: number
+  folders: number
+  children: UsageNode[]
+  largest: UsageNode[]
+  byKind: Array<{ kind: Kind; bytes: number; files: number; percent: number }>
+  scanned: number
+  truncated: boolean
+  elapsedMs: number
+}
+
+export type RenameMode = 'replace' | 'prefix' | 'suffix' | 'number' | 'case'
+
+export interface RenameRule {
+  mode: RenameMode
+  find?: string
+  replace?: string
+  regex?: boolean
+  caseSensitive?: boolean
+  text?: string
+  start?: number
+  padding?: number
+  pattern?: string
+  casing?: 'lower' | 'upper' | 'title'
+  keepExtension?: boolean
+}
+
+export interface RenameChange {
+  path: string
+  from: string
+  to: string
+  conflict: boolean
+  unchanged: boolean
+  reason?: string
+}
+
+export interface RenamePreview {
+  changes: RenameChange[]
+  conflicts: number
+  unchanged: number
+  valid: number
+}

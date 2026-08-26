@@ -148,6 +148,7 @@ export default function AppLayout() {
   const { can } = useSession()
 
   const compact = useCompact()
+  const drawerOpen = useDrawer((state) => state.open)
   const setDrawer = useDrawer((state) => state.setOpen)
   const toggleDrawer = useDrawer((state) => state.toggle)
   const toggleSidebar = useApp((state) => state.toggleSidebar)
@@ -171,6 +172,14 @@ export default function AppLayout() {
     droppableRef.current = droppable
     compactRef.current = compact
   }, [folder, droppable, compact])
+
+  // The drawer covers the page on a narrow screen, so the page behind it is
+  // held still. Sidebar owns the backdrop and the Escape key; nothing here
+  // takes the focus away from the drawer or gives it back.
+  useEffect(() => {
+    document.body.classList.toggle('sx-locked', compact && drawerOpen)
+    return () => document.body.classList.remove('sx-locked')
+  }, [compact, drawerOpen])
 
   // ---- live updates ---------------------------------------------------------
 

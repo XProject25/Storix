@@ -278,3 +278,72 @@
   font-display: swap;
   src: local('Inter'), local('Inter var');
 }
+
+/* ---------------------------------------------------------------------------
+   Small screens.
+   Storix is used at a desk most of the time, but it has to work in one hand as
+   well. Everything below this line is additive and scoped to narrow viewports,
+   so the desktop layout keeps exactly the proportions it had.
+   Developed by X Project.
+   --------------------------------------------------------------------------- */
+
+/* A drawer or a sheet holds the page behind it still while it is open. */
+body.sx-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Under 1024px the navigation is a drawer, which is a fair sign that a finger
+   is doing the pointing. A finger needs about 40px. Every rule here is a floor,
+   so nothing anywhere gets smaller than it was. */
+@media (max-width: 1023px) {
+  /* Nothing is allowed to push the page sideways on a narrow screen. */
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Room under the listing for the transfer dock, so it covers no rows. */
+  .sx-dock-gap {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .sx-touch {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  .sx-btn,
+  .sx-input,
+  .sx-menu-item,
+  .sx-nav-item {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 767px) {
+  /* A list row carries a second line of text here, and has to be tappable. */
+  .sx-row-file {
+    height: 52px;
+  }
+}
+
+/* Under 1024px the details panel is a sheet that rises over the listing. */
+.sx-sheet {
+  max-height: 85vh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@supports (max-height: 85dvh) {
+  .sx-sheet {
+    max-height: 85dvh;
+  }
+}
+
+@media (max-width: 639px) {
+  /* The dock spans the screen, clear of the home indicator. */
+  .sx-dock {
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}

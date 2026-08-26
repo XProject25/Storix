@@ -45,6 +45,23 @@ function isTyping(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
+/**
+ * useTopbarNarrow reports whether the bar is too narrow to carry a search field
+ * next to everything else. Below this width the field becomes an icon that
+ * opens a row of its own.
+ */
+function useTopbarNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 639px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)')
+    const update = () => setNarrow(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return narrow
+}
+
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -163,7 +180,10 @@ export default function Topbar({ title }: { title?: string }) {
   const filesRef = useRef<HTMLInputElement>(null)
   const folderRef = useRef<HTMLInputElement>(null)
 
+  const narrow = useTopbarNarrow()
+
   const [term, setTerm] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [newMenu, setNewMenu] = useState<Anchor | null>(null)
   const [bellMenu, setBellMenu] = useState<Anchor | null>(null)
   const [account, setAccount] = useState<Anchor | null>(null)
@@ -187,6 +207,9 @@ export default function Topbar({ title }: { title?: string }) {
 
   useEffect(() => {
     const focus = () => {
+      // On a narrow bar the field lives in a row that has to open first. The
+      // effect below focuses it once it is on screen.
+      setSearchOpen(true)
       searchRef.current?.focus()
       searchRef.current?.select()
     }
@@ -204,11 +227,24 @@ export default function Topbar({ title }: { title?: string }) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!searchOpen) return
+    searchRef.current?.focus()
+    searchRef.current?.select()
+  }, [searchOpen])
+
+  // Changing width moves the field between the bar and a row of its own, so the
+  // overlay never survives the change.
+  useEffect(() => {
+    setSearchOpen(false)
+  }, [narrow])
+
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
     const query = term.trim()
     if (!query) return
     searchRef.current?.blur()
+    setSearchOpen(false)
     navigate(`/files?q=${encodeURIComponent(query)}`)
   }
 
@@ -338,39 +374,57 @@ export default function Topbar({ title }: { title?: string }) {
     navigate('/login', { replace: true })
   }
 
+  const searchField = (
+    <div className="relative min-w-0 flex-1">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
+        <Icon name="search" size={16} />
+      </span>
+      <input
+        ref={searchRef}
+        type="search"
+        value={term}
+        onChange={(event) => setTerm(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setTerm('')
+            setSearchOpen(false)
+            event.currentTarget.blur()
+          }
+        }}
+        placeholder="Search files and folders"
+        aria-label="Search files and folders"
+        className="sx-input pl-9 pr-3 sm:pr-20"
+      />
+      <span className="sx-chip pointer-events-none absolute right-1.5 top-1/2 hidden -translate-y-1/2 text-[10px] text-faint sm:inline-flex">
+        Ctrl K
+      </span>
+    </div>
+  )
+
   return (
-    <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-line bg-surface px-3 sm:px-4">
-      <IconButton icon="menu" label="Show navigation" className="lg:hidden" onClick={() => toggleDrawer()} />
+    <header className="relative flex h-[60px] shrink-0 items-center gap-2 border-b border-line bg-surface px-3 sm:px-4">
+      <IconButton icon="menu" label="Show navigation" className="sx-touch lg:hidden" onClick={() => toggleDrawer()} />
 
       {title && <h1 className="hidden shrink-0 truncate text-sm font-medium text-ink sm:block">{title}</h1>}
 
-      <form onSubmit={submitSearch} className="mx-auto w-full max-w-[520px] flex-1" role="search">
-        <div className="relative">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
-            <Icon name="search" size={16} />
-          </span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setTerm('')
-                event.currentTarget.blur()
-              }
-            }}
-            placeholder="Search files and folders"
-            aria-label="Search files and folders"
-            className="sx-input pl-9 pr-20"
-          />
-          <span className="sx-chip pointer-events-none absolute right-1.5 top-1/2 hidden -translate-y-1/2 text-[10px] text-faint sm:inline-flex">
-            Ctrl K
-          </span>
-        </div>
-      </form>
+      {narrow ? (
+        <div className="flex-1" />
+      ) : (
+        <form onSubmit={submitSearch} className="mx-auto w-full max-w-[520px] flex-1" role="search">
+          {searchField}
+        </form>
+      )}
 
       <div className="flex shrink-0 items-center gap-1">
+        {narrow && (
+          <IconButton
+            icon="search"
+            label="Search files and folders"
+            className="sx-touch"
+            onClick={() => setSearchOpen(true)}
+          />
+        )}
+
         {(canCreate || canUpload) && (
           <Button
             variant="primary"
@@ -386,7 +440,7 @@ export default function Topbar({ title }: { title?: string }) {
           <IconButton
             icon="plus"
             label="New"
-            className="sm:hidden"
+            className="sx-touch sm:hidden"
             onClick={(event) => setNewMenu(anchorOf(event.currentTarget))}
           />
         )}
@@ -394,6 +448,7 @@ export default function Topbar({ title }: { title?: string }) {
         <IconButton
           icon={theme === 'dark' ? 'sun' : 'moon'}
           label={theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+          className="sx-touch"
           onClick={() => toggleTheme()}
         />
 
@@ -401,6 +456,7 @@ export default function Topbar({ title }: { title?: string }) {
           <IconButton
             icon="bell"
             label={unread > 0 ? `Notifications, ${unread} new` : 'Notifications'}
+            className="sx-touch"
             onClick={(event) => {
               setUnread(0)
               setBellMenu(anchorOf(event.currentTarget))
@@ -416,7 +472,7 @@ export default function Topbar({ title }: { title?: string }) {
           aria-label="Account"
           aria-haspopup="menu"
           onClick={(event) => setAccount(anchorOf(event.currentTarget))}
-          className="ml-1 flex h-9 w-9 items-center justify-center rounded-xl text-[12px] font-semibold text-white transition-transform hover:brightness-110"
+          className="sx-touch ml-1 flex h-9 w-9 items-center justify-center rounded-xl text-[12px] font-semibold text-white transition-transform hover:brightness-110"
           style={{
             backgroundImage: 'linear-gradient(135deg, rgb(var(--sx-secondary)), rgb(var(--sx-accent)))',
           }}
@@ -424,6 +480,22 @@ export default function Topbar({ title }: { title?: string }) {
           {initials(displayName)}
         </button>
       </div>
+
+      {narrow && searchOpen && (
+        <form
+          onSubmit={submitSearch}
+          role="search"
+          className="absolute inset-x-0 top-0 z-20 flex h-[60px] animate-fade-in items-center gap-2 border-b border-line bg-surface px-3"
+        >
+          {searchField}
+          <IconButton
+            icon="close"
+            label="Close search"
+            className="sx-touch shrink-0"
+            onClick={() => setSearchOpen(false)}
+          />
+        </form>
+      )}
 
       <input
         ref={filesRef}

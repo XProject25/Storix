@@ -16,10 +16,12 @@ import {
   ConfirmDialog,
   EmptyState,
   IconButton,
+  Modal,
   Skeleton,
   Toggle,
   useToast,
 } from '../components/ui'
+import { QRCode } from '../components/QRCode'
 import { ShareDialog, copyText, shareLink } from '../components/ShareDialog'
 import { PathPickerDialog } from '../components/dialogs'
 
@@ -42,6 +44,7 @@ export default function SharesPage() {
   const [target, setTarget] = useState<Target | null>(null)
   const [editing, setEditing] = useState<Share | null>(null)
   const [revoking, setRevoking] = useState<Share | null>(null)
+  const [scanning, setScanning] = useState<Share | null>(null)
 
   const shares = useQuery({
     queryKey: ['shares', all ? 'all' : 'mine'],
@@ -204,6 +207,7 @@ export default function SharesPage() {
                               share={share}
                               onCopy={() => void copy(share)}
                               onOpen={() => open(share)}
+                              onCode={() => setScanning(share)}
                               onEdit={() => startEdit(share)}
                               onRevoke={() => setRevoking(share)}
                             />
@@ -235,6 +239,7 @@ export default function SharesPage() {
                       share={share}
                       onCopy={() => void copy(share)}
                       onOpen={() => open(share)}
+                      onCode={() => setScanning(share)}
                       onEdit={() => startEdit(share)}
                       onRevoke={() => setRevoking(share)}
                     />
@@ -273,6 +278,29 @@ export default function SharesPage() {
         onCreated={() => void queryClient.invalidateQueries({ queryKey: ['shares'] })}
         onUpdated={closeDialog}
       />
+
+      <Modal
+        open={scanning !== null}
+        onClose={() => setScanning(null)}
+        icon="grid"
+        title="Scan this link"
+        description="Point a phone camera at the code to open the link on it."
+        width={330}
+      >
+        {scanning && (
+          <div className="flex flex-col items-center gap-3">
+            <div className="rounded-2xl bg-white p-3 text-black">
+              <QRCode value={shareLink(scanning)} size={220} />
+            </div>
+            <div className="w-full min-w-0 text-center">
+              <div className="truncate text-sm font-medium text-ink" title={scanning.name}>
+                {scanning.name}
+              </div>
+              <div className="mt-1 break-all font-mono text-[11px] text-faint">{shareLink(scanning)}</div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <ConfirmDialog
         open={revoking !== null}
@@ -397,18 +425,21 @@ function Actions({
   share,
   onCopy,
   onOpen,
+  onCode,
   onEdit,
   onRevoke,
 }: {
   share: Share
   onCopy: () => void
   onOpen: () => void
+  onCode: () => void
   onEdit: () => void
   onRevoke: () => void
 }) {
   return (
     <>
       <IconButton icon="copy" label={`Copy the link for ${share.name}`} size={16} onClick={onCopy} />
+      <IconButton icon="grid" label={`Show the code for ${share.name}`} size={16} onClick={onCode} />
       <IconButton icon="external" label={`Open the link for ${share.name}`} size={16} onClick={onOpen} />
       <IconButton icon="edit" label={`Edit the link for ${share.name}`} size={16} onClick={onEdit} />
       <IconButton icon="trash" label={`Revoke the link for ${share.name}`} size={16} tone="danger" onClick={onRevoke} />

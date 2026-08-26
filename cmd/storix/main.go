@@ -283,6 +283,10 @@ func cmdServe(args []string) error {
 	}
 	a.thumbs = thumbCache
 
+	// The upload engine consults the quota before a transfer starts and records
+	// the bytes once it lands. Those answers live in the API, which in turn
+	// needs the upload engine, so the hooks bind late through this pointer.
+	var rest *api.API
 	a.uploads = upload.New(upload.Deps{
 		Store:   a.store,
 		VFS:     a.vfs,
@@ -290,6 +294,18 @@ func cmdServe(args []string) error {
 		Logger:  a.log,
 		MaxSize: a.cfg.Limits.MaxUploadSize,
 		Expiry:  a.cfg.Limits.UploadExpiry.D(),
+		QuotaCheck: func(ctx context.Context, userID int64, size int64) (bool, int64, error) {
+			if rest == nil {
+				return true, -1, nil
+			}
+			return rest.UploadQuotaCheck()(ctx, userID, size)
+		},
+		QuotaAdd: func(ctx context.Context, userID int64, bytes int64) {
+			if rest == nil {
+				return
+			}
+			rest.UploadQuotaAdd()(ctx, userID, bytes)
+		},
 	})
 
 	channel, _ := a.store.GetSetting(ctx, store.SettingUpdateChannel)
@@ -301,7 +317,7 @@ func cmdServe(args []string) error {
 		static = web.Placeholder()
 	}
 
-	rest := api.New(api.Deps{
+	rest = api.New(api.Deps{
 		Config:  a.cfg,
 		Store:   a.store,
 		VFS:     a.vfs,

@@ -32,6 +32,7 @@ import {
   useToast,
   type MenuItem,
 } from '../components/ui'
+import { useCompact } from '../layout/Sidebar'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { FileList, STORIX_DRAG_TYPE, type SelectModifiers } from '../components/FileList'
 import { FileGallery, FileGrid } from '../components/FileGrid'
@@ -44,6 +45,7 @@ import {
   PropertiesDialog,
   RenameDialog,
 } from '../components/dialogs'
+import { BulkRenameDialog } from '../components/BulkRenameDialog'
 import { ShareDialog } from '../components/ShareDialog'
 import DetailsPanel from '../components/DetailsPanel'
 
@@ -134,6 +136,10 @@ export default function FilesPage() {
   const { can, me } = useSession()
   const app = useApp()
   const enqueue = useTransfers((state) => state.enqueue)
+  // Under 1024px the details panel becomes a sheet and the dock spans the foot
+  // of the screen, so the listing has to know about both.
+  const compact = useCompact()
+  const docked = useTransfers((state) => state.items.length > 0)
 
   const path = fromRoute(params['*'] ?? '')
   const searchTerm = (searchParams.get('q') ?? '').trim()
@@ -150,6 +156,7 @@ export default function FilesPage() {
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [newFileOpen, setNewFileOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<Entry | null>(null)
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false)
   const [picker, setPicker] = useState<{ mode: 'move' | 'copy'; sources: string[] } | null>(null)
   const [compressOpen, setCompressOpen] = useState(false)
   const [extractTarget, setExtractTarget] = useState<Entry | null>(null)
@@ -157,6 +164,9 @@ export default function FilesPage() {
   const [shareTarget, setShareTarget] = useState<Entry | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
   const [editorPath, setEditorPath] = useState<string | null>(null)
+  // The sheet covers the listing, so on a narrow screen the details only appear
+  // when they are asked for, never because the panel was left open on a desk.
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const selectionBase = useRef<Set<string>>(new Set())
   const fileInput = useRef<HTMLInputElement>(null)
@@ -166,6 +176,7 @@ export default function FilesPage() {
     newFolderOpen ||
     newFileOpen ||
     renameTarget !== null ||
+    bulkRenameOpen ||
     picker !== null ||
     compressOpen ||
     extractTarget !== null ||
@@ -236,7 +247,12 @@ export default function FilesPage() {
     setAnchor(null)
     setFocused(null)
     setRenamingPath(null)
+    setSheetOpen(false)
   }, [path, searchTerm])
+
+  useEffect(() => {
+    if (!compact) setSheetOpen(false)
+  }, [compact])
 
   useEffect(() => {
     if (path) useApp.getState().setLastPath(path)
@@ -358,6 +374,12 @@ export default function FilesPage() {
     [path],
   )
 
+  /** showDetails opens the panel beside the listing, or the sheet over it. */
+  const showDetails = useCallback(() => {
+    app.setDetailsOpen(true)
+    setSheetOpen(true)
+  }, [app])
+
   const openEntry = useCallback(
     (entry: Entry) => {
       if (entry.isDir) {
@@ -371,12 +393,12 @@ export default function FilesPage() {
       if (entry.previewable) {
         applySelection(new Set([entry.path]))
         setFocused(entry.path)
-        app.setDetailsOpen(true)
+        showDetails()
         return
       }
       if (can('download')) download([entry])
     },
-    [app, applySelection, can, download, go, openEditor],
+    [applySelection, can, download, go, openEditor, showDetails],
   )
 
   // ---- operations -----------------------------------------------------------
@@ -726,7 +748,7 @@ export default function FilesPage() {
           onSelect: () => {
             applySelection(new Set([entry.path]))
             setFocused(entry.path)
-            app.setDetailsOpen(true)
+            showDetails()
           },
         },
         {
@@ -744,6 +766,13 @@ export default function FilesPage() {
           shortcut: 'F2',
           disabled: !can('rename') || readOnly || many,
           onSelect: () => setRenamingPath(entry.path),
+        },
+        {
+          id: 'rename-many',
+          label: 'Rename many',
+          icon: 'edit',
+          disabled: !can('rename') || readOnly || !many,
+          onSelect: () => setBulkRenameOpen(true),
         },
         {
           id: 'copy',
@@ -842,6 +871,7 @@ export default function FilesPage() {
       selected,
       selectedEntries,
       selectedPaths,
+      showDetails,
       trashSelection,
     ],
   )
@@ -889,6 +919,13 @@ export default function FilesPage() {
 
   const moreMenuItems = useCallback(
     (): MenuItem[] => [
+      {
+        id: 'rename-many',
+        label: 'Rename many',
+        icon: 'edit',
+        disabled: !can('rename') || readOnly || selectedPaths.length < 2,
+        onSelect: () => setBulkRenameOpen(true),
+      },
       {
         id: 'compress',
         label: 'Compress',
@@ -1059,60 +1096,70 @@ export default function FilesPage() {
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      <div className="flex min-w-0 flex-1 flex-col p-4">
-        {/* location */}
-        <div className="mb-3 flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
+        {/* location. On a phone the trail keeps the first line to itself. */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Breadcrumbs
             crumbs={crumbs}
             onNavigate={go}
             onDropOnCrumb={(target, event) => dropPaths(target, event)}
-            className="flex-1"
+            className="basis-full flex-1 sm:basis-0"
           />
-          {listQuery.isFetching && <Spinner size={14} className="text-faint" />}
-          {!isRoot && (
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+            {listQuery.isFetching && <Spinner size={14} className="text-faint" />}
+            {!isRoot && (
+              <IconButton
+                icon={listing?.favorite ? 'star-filled' : 'star'}
+                label={listing?.favorite ? 'Remove this folder from favourites' : 'Add this folder to favourites'}
+                className="sx-touch"
+                active={listing?.favorite}
+                onClick={() => favoriteMutation.mutate({ path, pinned: listing?.favorite === true })}
+              />
+            )}
             <IconButton
-              icon={listing?.favorite ? 'star-filled' : 'star'}
-              label={listing?.favorite ? 'Remove this folder from favourites' : 'Add this folder to favourites'}
-              active={listing?.favorite}
-              onClick={() => favoriteMutation.mutate({ path, pinned: listing?.favorite === true })}
+              icon="refresh"
+              label="Refresh"
+              className="sx-touch"
+              onClick={() => void listQuery.refetch()}
             />
-          )}
-          <IconButton icon="refresh" label="Refresh" onClick={() => void listQuery.refetch()} />
-          <div className="flex items-center gap-0.5 rounded-xl border border-line bg-elevated p-0.5">
-            <IconButton
-              icon="list"
-              label="List view"
-              size={16}
-              className="h-7 w-7"
-              active={app.view === 'list'}
-              onClick={() => app.setView('list')}
-            />
-            <IconButton
-              icon="grid"
-              label="Grid view"
-              size={16}
-              className="h-7 w-7"
-              active={app.view === 'grid'}
-              onClick={() => app.setView('grid')}
-            />
-            <IconButton
-              icon="gallery"
-              label="Gallery view"
-              size={16}
-              className="h-7 w-7"
-              active={app.view === 'gallery'}
-              onClick={() => app.setView('gallery')}
-            />
+            <div className="flex items-center gap-0.5 rounded-xl border border-line bg-elevated p-0.5">
+              <IconButton
+                icon="list"
+                label="List view"
+                size={16}
+                className="sx-touch h-7 w-7"
+                active={app.view === 'list'}
+                onClick={() => app.setView('list')}
+              />
+              <IconButton
+                icon="grid"
+                label="Grid view"
+                size={16}
+                className="sx-touch h-7 w-7"
+                active={app.view === 'grid'}
+                onClick={() => app.setView('grid')}
+              />
+              <IconButton
+                icon="gallery"
+                label="Gallery view"
+                size={16}
+                className="sx-touch h-7 w-7"
+                active={app.view === 'gallery'}
+                onClick={() => app.setView('gallery')}
+              />
+            </div>
           </div>
         </div>
 
-        {/* toolbar */}
+        {/* toolbar. Under 768px it is one scrolling row of icons, and Upload is
+            the only action that keeps its word. */}
         {!isRoot && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-x-visible">
             <Button
               variant="primary"
               icon="cloud-upload"
               iconRight="chevron-down"
+              className="shrink-0"
               disabled={!canUpload}
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect()
@@ -1121,62 +1168,95 @@ export default function FilesPage() {
             >
               Upload
             </Button>
+            {/* Below 1024px the sheet is the only way to reach the details, so
+                the button that opens it stays in reach without scrolling. */}
+            {compact && (
+              <Button
+                icon="info"
+                title="Details"
+                aria-label="Details"
+                className="shrink-0"
+                onClick={() => (sheetOpen ? setSheetOpen(false) : showDetails())}
+              />
+            )}
             <Button
               icon="download"
+              title="Download"
+              aria-label="Download"
+              className="shrink-0"
               disabled={!can('download') || selectedPaths.length === 0}
               onClick={() => download(selectedEntries)}
             >
-              Download
+              <span className="hidden md:inline">Download</span>
             </Button>
-            <Button icon="folder-plus" disabled={!canCreate} onClick={() => setNewFolderOpen(true)}>
-              New folder
+            <Button
+              icon="folder-plus"
+              title="New folder"
+              aria-label="New folder"
+              className="shrink-0"
+              disabled={!canCreate}
+              onClick={() => setNewFolderOpen(true)}
+            >
+              <span className="hidden md:inline">New folder</span>
             </Button>
             <Button
               icon="move"
+              title="Move"
+              aria-label="Move"
+              className="shrink-0"
               disabled={!canMove || selectedPaths.length === 0}
               onClick={() => setPicker({ mode: 'move', sources: selectedPaths })}
             >
-              Move
+              <span className="hidden md:inline">Move</span>
             </Button>
             <Button
               icon="copy"
+              title="Copy"
+              aria-label="Copy"
+              className="shrink-0"
               disabled={!can('copy') || selectedPaths.length === 0}
               onClick={() => setPicker({ mode: 'copy', sources: selectedPaths })}
             >
-              Copy
+              <span className="hidden md:inline">Copy</span>
             </Button>
             <Button
               variant="danger"
               icon="trash"
+              title="Delete"
+              aria-label="Delete"
+              className="shrink-0"
               disabled={!canDelete || selectedPaths.length === 0}
               onClick={() => trashSelection(selectedPaths)}
             >
-              Delete
+              <span className="hidden md:inline">Delete</span>
             </Button>
-            <div className="flex-1" />
+            <div className="hidden flex-1 md:block" />
             <Button
               icon="more"
+              title="More"
+              aria-label="More"
+              className="shrink-0"
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect()
                 setToolMenu({ x: rect.right, y: rect.bottom + 6, kind: 'more' })
               }}
             >
-              More
+              <span className="hidden md:inline">More</span>
             </Button>
           </div>
         )}
 
         {/* selection summary */}
         {selectedPaths.length > 0 && (
-          <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
-            <Icon name="check-circle" size={16} className="text-primary" />
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
+            <Icon name="check-circle" size={16} className="shrink-0 text-primary" />
             <span className="text-sm text-ink">{counted(selectedPaths.length, 'item')} selected</span>
             {selectedBytes > 0 && <span className="text-sm text-muted">{bytes(selectedBytes)}</span>}
             <div className="flex-1" />
-            <Button variant="ghost" onClick={selectAll}>
+            <Button variant="ghost" className="shrink-0" onClick={selectAll}>
               Select all
             </Button>
-            <Button variant="ghost" icon="close" onClick={clearSelection}>
+            <Button variant="ghost" icon="close" className="shrink-0" onClick={clearSelection}>
               Clear
             </Button>
           </div>
@@ -1185,19 +1265,21 @@ export default function FilesPage() {
         {/* search banner */}
         {searching && (
           <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-elevated px-3 py-2">
-            <Icon name="search" size={16} className="text-faint" />
-            <span className="truncate text-sm text-ink">Results for {searchTerm}</span>
-            {searchQuery.data?.truncated && <span className="sx-chip">First 500 shown</span>}
-            <div className="flex-1" />
-            <Button variant="ghost" icon="close" onClick={() => go(path)}>
+            <Icon name="search" size={16} className="shrink-0 text-faint" />
+            <span className="min-w-0 flex-1 truncate text-sm text-ink">Results for {searchTerm}</span>
+            {searchQuery.data?.truncated && <span className="sx-chip hidden sm:inline-flex">First 500 shown</span>}
+            <Button variant="ghost" icon="close" className="shrink-0" onClick={() => go(path)}>
               Clear
             </Button>
           </div>
         )}
 
-        {/* listing */}
+        {/* listing. The dock sits at the foot of a narrow screen, so the last
+            row gets room to stay clear of it. */}
         <div
-          className="sx-panel relative mt-3 flex min-h-0 flex-1 flex-col overflow-hidden"
+          className={
+            'sx-panel relative mt-3 flex min-h-0 flex-1 flex-col overflow-hidden' + (docked ? ' sx-dock-gap' : '')
+          }
           onContextMenu={(event) => {
             if (isRoot) return
             if ((event.target as HTMLElement).closest('[data-row]')) return
@@ -1208,8 +1290,8 @@ export default function FilesPage() {
         </div>
       </div>
 
-      {app.detailsOpen && !isRoot && (
-        <div className="hidden h-full shrink-0 lg:block">
+      {app.detailsOpen && !isRoot && !compact && (
+        <div className="h-full shrink-0">
           <DetailsPanel
             entry={detailEntry}
             entries={selectedEntries}
@@ -1217,6 +1299,23 @@ export default function FilesPage() {
             onAction={handleDetailAction}
           />
         </div>
+      )}
+
+      {sheetOpen && !isRoot && compact && (
+        <>
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-[44] animate-fade-in bg-black/55 backdrop-blur-[2px]"
+            onClick={() => setSheetOpen(false)}
+          />
+          <DetailsPanel
+            sheet
+            entry={detailEntry}
+            entries={selectedEntries}
+            onClose={() => setSheetOpen(false)}
+            onAction={handleDetailAction}
+          />
+        </>
       )}
 
       {/* hidden upload inputs */}
@@ -1315,6 +1414,17 @@ export default function FilesPage() {
           onClose={() => setRenameTarget(null)}
           onDone={() => {
             setRenameTarget(null)
+            invalidateListing()
+          }}
+        />
+      )}
+      {bulkRenameOpen && (
+        <BulkRenameDialog
+          open
+          entries={selectedEntries}
+          onClose={() => setBulkRenameOpen(false)}
+          onDone={() => {
+            clearSelection()
             invalidateListing()
           }}
         />

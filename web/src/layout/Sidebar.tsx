@@ -226,6 +226,52 @@ function StorageMeter({ path, rail }: { path: string | null; rail: boolean }) {
   )
 }
 
+/**
+ * AllowanceMeter sits under the volume meter when this account has a quota, so
+ * the personal ceiling is as visible as the one for the whole volume.
+ */
+function AllowanceMeter({ rail }: { rail: boolean }) {
+  const quota = useQuery({
+    queryKey: ['quota'],
+    queryFn: () => api.quota(),
+    staleTime: 60_000,
+  })
+
+  const data = quota.data
+  if (!data || data.limit <= 0) return null
+
+  const share = data.percent > 0 ? data.percent : (data.used / data.limit) * 100
+  const value = Math.min(100, Math.max(0, Number.isFinite(share) ? share : 0))
+  const fill = value >= 95 ? 'rgb(var(--sx-danger))' : value >= 80 ? 'rgb(var(--sx-warning))' : undefined
+  const label = `Your allowance. ${bytes(data.used)} of ${bytes(data.limit)} used`
+
+  const bar = (
+    <div className="sx-progress" role="progressbar" aria-label="Your allowance" aria-valuenow={Math.round(value)}>
+      <span style={{ width: `${value}%`, background: fill }} />
+    </div>
+  )
+
+  if (rail) {
+    return (
+      <div className="mt-2 px-1" title={label}>
+        {bar}
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 rounded-2xl border border-line bg-elevated/60 px-3 py-2" title={label}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted">Your allowance</span>
+        <span className="shrink-0 text-[11px] text-faint">
+          {bytes(data.used)} of {bytes(data.limit)}
+        </span>
+      </div>
+      <div className="mt-1.5">{bar}</div>
+    </div>
+  )
+}
+
 // ---- sidebar ----------------------------------------------------------------
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -317,6 +363,14 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="mt-5">
           {rail ? <div className="sx-divider mx-2" /> : <SectionTitle>Storage</SectionTitle>}
           <div className="space-y-0.5">
+            <NavRow
+              to="/storage"
+              label="Storage"
+              icon="drive"
+              rail={rail}
+              active={matches(pathname, '/storage')}
+              onNavigate={onNavigate}
+            />
             {mounts.map((mount) => (
               <NavRow
                 key={mount.path}
@@ -361,6 +415,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="shrink-0 border-t border-line pb-3 pt-3">
         <StorageMeter path={firstMount ? firstMount.path : null} rail={rail} />
+        <AllowanceMeter rail={rail} />
         {rail ? (
           <div className="mt-3 text-center text-[10px] text-faint" title={`Storix ${version}. Developed by X Project.`}>
             {version || 'Storix'}

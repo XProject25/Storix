@@ -100,6 +100,11 @@ PUT    /api/v1/fs/text                save editor payload
 GET    /api/v1/fs/search              recursive search
 GET    /api/v1/fs/du                  recursive size
 GET    /api/v1/fs/disk                volume usage
+GET    /api/v1/fs/usage               what is taking up space under a folder
+POST   /api/v1/fs/rename-bulk/preview bulk rename, what would happen
+POST   /api/v1/fs/rename-bulk         bulk rename, apply
+GET    /api/v1/auth/quota             own storage allowance
+GET    /api/v1/users/{id}/quota       one account allowance (admin)
 POST   /api/v1/fs/chmod               permissions (advanced)
 POST   /api/v1/fs/chown               ownership (advanced)
 POST   /api/v1/fs/compress            create archive (job)
@@ -160,10 +165,15 @@ PATCH  /api/v1/public/{token}/tus/{id}
 ## Uploads
 
 Uploads use the tus 1.0.0 resumable protocol so an interrupted 80 GB transfer
-resumes at the byte it stopped at instead of starting over. Chunks land in
-`/var/lib/storix/uploads` and are moved into place only once the declared
-length has been received. Folder uploads carry a `relativePath` metadata field
-and Storix recreates the tree.
+resumes at the byte it stopped at instead of starting over.
+
+Partial data is written straight into the destination directory under a hidden
+name, `.storix-<id>.part`, rather than into a staging area. Finishing an upload
+is then a single rename on the same volume instead of a second full copy of the
+data, which for an 80 GB file is the difference between instant and several
+minutes of disk. Those scratch files are filtered out of every listing and
+search, and are removed when an upload is abandoned or expires. Folder uploads
+carry a `relativePath` metadata field and Storix recreates the tree.
 
 ## Background jobs
 
@@ -178,3 +188,11 @@ Roles are presets over a flat permission set: `view`, `download`, `upload`,
 `advanced`, `users`, `settings`. `admin` implies all of them. The UI presents
 the simple question "who can access this" and keeps the Unix mode bits behind
 an Advanced disclosure.
+
+## Storage allowance
+
+An account may carry a quota. The figure lives in `user_usage` and is refreshed
+by a background walk rather than recomputed on every request, so a listing
+never waits on a disk scan. An upload is refused before any bytes are written,
+because tus declares the length up front, and a finished upload adds its size
+to the running total without a rescan. A quota of zero means no limit.
