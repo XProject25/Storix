@@ -28,9 +28,38 @@ database server, no web server to configure.
 
 ## Screenshots
 
-None yet. Screenshots of the file browser, the transfer queue and the settings
-belong in `assets/`, which currently holds only the logo and the icons. This
-section will link them once they are taken and committed.
+<p align="center">
+  <img src="assets/screenshots/files.png" alt="The file browser, with the details panel open" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/storage.png" alt="The storage screen, showing what is using space" width="900">
+</p>
+
+<details>
+<summary>More screens</summary>
+
+<p align="center">
+  <img src="assets/screenshots/dashboard.png" alt="The dashboard" width="900"><br>
+  <em>The dashboard, with volume usage and recent files.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/shares.png" alt="Public links" width="900"><br>
+  <em>Public links, with expiry, password and download limits.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/users.png" alt="Accounts" width="900"><br>
+  <em>Accounts, each reaching only the folders it was given.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/settings.png" alt="Settings" width="900"><br>
+  <em>Settings, where folders, access and the domain are managed.</em>
+</p>
+
+</details>
 
 ## Install
 
