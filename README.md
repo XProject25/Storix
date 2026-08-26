@@ -108,6 +108,21 @@ prints it again. Afterwards, `sudo storix user list` shows the accounts and
 `sudo storix user passwd <username>` sets a new password without needing the
 old one.
 
+### Setting it up without a browser
+
+The installer itself never prompts: it cannot, because the script arrives on
+standard input, and it would rather not take a password on a terminal anyway.
+For a server built by a script, finish the first run in one command instead of
+opening the link:
+
+```bash
+sudo storix setup -username admin -password 'choose something long' -folder /home -folder /var/www
+```
+
+Leave `-password` out and one is generated and printed. `STORIX_PASSWORD` works
+too, which keeps it out of the shell history. The command refuses to run twice,
+so it is safe in a playbook that may be applied again.
+
 ## What it does
 
 | | |
@@ -238,6 +253,7 @@ log:
 
 ```
 storix serve            run the server, this is what the service does
+storix setup            finish the first run without a browser
 storix version          version, commit and platform
 storix user list        show the accounts
 storix user add NAME    create an account, with -role and -mount

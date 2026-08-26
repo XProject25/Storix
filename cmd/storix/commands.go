@@ -213,6 +213,15 @@ func addUser(ctx context.Context, a *app, username, role, email, display, passwo
 	if generated {
 		fmt.Printf("Generated password: %s\n", password)
 	}
+	// An account created before the first run is finished cannot sign in, and
+	// the only symptom is every request answering that Storix is not set up.
+	// Say so here rather than letting somebody discover it at the login form.
+	if !a.store.SetupCompleted(ctx) {
+		fmt.Printf("\nThis server has not finished its first run, so no account can sign in yet.\n")
+		fmt.Printf("Finish it without a browser:\n")
+		fmt.Printf("  storix setup -username %s -folder /home\n", username)
+		fmt.Printf("or open the link from: storix setup-token\n")
+	}
 	return nil
 }
 

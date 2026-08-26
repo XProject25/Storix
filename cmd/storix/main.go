@@ -57,6 +57,8 @@ func run(args []string) error {
 		return cmdVersion()
 	case "user":
 		return cmdUser(args)
+	case "setup":
+		return cmdSetup(args)
 	case "setup-token":
 		return cmdSetupToken(args)
 	case "update":
@@ -85,6 +87,7 @@ Commands:
   serve          Run the server (default)
   version        Print version information
   user           Manage accounts: user add|list|passwd|disable|enable|delete
+  setup          Complete the first run without a browser
   setup-token    Print the token that unlocks the first run wizard
   update         Download and install the newest release
   doctor         Check the installation and report problems

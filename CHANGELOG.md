@@ -6,6 +6,26 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.3.0] - 2026-08-26
+
+### Added
+
+- **`storix setup` finishes the first run without a browser.** The installer
+  cannot prompt for anything, because the script it runs arrives on standard
+  input, so the account has always been chosen in the wizard instead. That
+  leaves a server built by a script with no way through. One command now does
+  the whole first run: the administrator, the folders and, optionally, the
+  domain. Leave the password out and one is generated and printed, or pass it
+  in `STORIX_PASSWORD` to keep it out of the shell history. Running it a
+  second time is refused, so it is safe in a playbook.
+
+### Fixed
+
+- Creating an administrator with `storix user add` before the first run had
+  finished produced an account that could not sign in, and the only symptom
+  was every request answering "Storix has not been set up yet". The command
+  now says so and names the command that finishes the job.
+
 ## [1.2.3] - 2026-08-26
 
 ### Fixed
@@ -318,6 +338,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.3.0]: https://github.com/XProject25/Storix/releases/tag/v1.3.0
 [1.2.3]: https://github.com/XProject25/Storix/releases/tag/v1.2.3
 [1.2.2]: https://github.com/XProject25/Storix/releases/tag/v1.2.2
 [1.2.1]: https://github.com/XProject25/Storix/releases/tag/v1.2.1
