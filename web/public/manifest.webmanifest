@@ -1,0 +1,13 @@
+{
+  "name": "Storix",
+  "short_name": "Storix",
+  "description": "Modern web file manager for servers. Developed by X Project.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
+  "icons": [
+    { "src": "/storix-mark-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/storix-mark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

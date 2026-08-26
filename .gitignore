@@ -1,0 +1,33 @@
+# Build output
+/dist/
+/build/
+/storix
+/storix.exe
+*.test
+*.out
+
+# The frontend build is embedded at release time, not committed
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
+!/internal/web/dist/index.html
+
+# Node
+/web/node_modules/
+/web/.vite/
+/web/dist/
+npm-debug.log*
+yarn-error.log*
+
+# Local runtime data
+*.db
+*.db-shm
+*.db-wal
+/data/
+/tmp/
+
+# Editors and systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

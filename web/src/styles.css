@@ -1,0 +1,280 @@
+/* Storix design system. Developed by X Project. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sx-bg: 11 15 23;
+    --sx-surface: 17 24 39;
+    --sx-elevated: 22 28 40;
+    --sx-line: 35 42 58;
+    --sx-ink: 237 242 250;
+    --sx-muted: 156 163 175;
+    --sx-faint: 107 114 128;
+    --sx-primary: 0 212 255;
+    --sx-secondary: 0 119 255;
+    --sx-accent: 124 58 237;
+    --sx-violet: 217 70 239;
+    --sx-success: 52 211 153;
+    --sx-warning: 251 191 36;
+    --sx-danger: 248 113 113;
+
+    --sx-sidebar: 260px;
+    --sx-topbar: 60px;
+    --sx-radius: 12px;
+    color-scheme: dark;
+  }
+
+  html.light {
+    --sx-bg: 244 247 252;
+    --sx-surface: 255 255 255;
+    --sx-elevated: 248 250 253;
+    --sx-line: 224 231 240;
+    --sx-ink: 12 20 33;
+    --sx-muted: 92 105 125;
+    --sx-faint: 140 152 170;
+    --sx-primary: 0 145 190;
+    --sx-secondary: 0 96 214;
+    --sx-accent: 109 40 217;
+    --sx-violet: 192 38 211;
+    --sx-success: 5 150 105;
+    --sx-warning: 202 138 4;
+    --sx-danger: 220 38 38;
+    color-scheme: light;
+  }
+
+  * {
+    border-color: rgb(var(--sx-line));
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    margin: 0;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* The interface owns the whole viewport, only panes scroll. */
+  body {
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: rgb(var(--sx-primary) / 0.28);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--sx-primary) / 0.8);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Slim scrollbars that match the surface. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--sx-line)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgb(var(--sx-line));
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--sx-faint) / 0.6);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .sx-panel {
+    @apply bg-surface border border-line rounded-2xl shadow-panel;
+  }
+
+  .sx-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 h-9 text-sm font-medium
+      transition-colors duration-150 select-none whitespace-nowrap
+      disabled:opacity-45 disabled:pointer-events-none;
+  }
+
+  .sx-btn-primary {
+    @apply sx-btn text-white;
+    background-image: linear-gradient(135deg, rgb(var(--sx-secondary)), rgb(var(--sx-primary)));
+    box-shadow: 0 6px 18px -8px rgb(var(--sx-primary) / 0.85);
+  }
+
+  .sx-btn-primary:hover {
+    filter: brightness(1.08);
+  }
+
+  .sx-btn-secondary {
+    @apply sx-btn bg-elevated border border-line text-ink hover:bg-line/60;
+  }
+
+  .sx-btn-ghost {
+    @apply sx-btn text-muted hover:text-ink hover:bg-elevated;
+  }
+
+  .sx-btn-danger {
+    @apply sx-btn border text-danger;
+    border-color: rgb(var(--sx-danger) / 0.35);
+    background: rgb(var(--sx-danger) / 0.1);
+  }
+
+  .sx-btn-danger:hover {
+    background: rgb(var(--sx-danger) / 0.18);
+  }
+
+  .sx-input {
+    @apply w-full h-9 rounded-xl bg-elevated border border-line px-3 text-sm text-ink
+      placeholder:text-faint transition-colors;
+  }
+
+  .sx-input:focus {
+    @apply outline-none border-primary/70;
+    box-shadow: 0 0 0 3px rgb(var(--sx-primary) / 0.16);
+  }
+
+  .sx-label {
+    @apply block text-xs font-medium text-muted mb-1.5;
+  }
+
+  .sx-chip {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-medium
+      bg-elevated border border-line text-muted;
+  }
+
+  .sx-nav-item {
+    @apply flex items-center gap-3 h-9 px-3 rounded-xl text-sm text-muted
+      transition-colors cursor-pointer select-none;
+  }
+
+  .sx-nav-item:hover {
+    @apply bg-elevated text-ink;
+  }
+
+  .sx-nav-item[data-active='true'] {
+    @apply text-ink;
+    background: linear-gradient(
+      90deg,
+      rgb(var(--sx-primary) / 0.16),
+      rgb(var(--sx-accent) / 0.12)
+    );
+    box-shadow: inset 0 0 0 1px rgb(var(--sx-primary) / 0.25);
+  }
+
+  .sx-row {
+    @apply flex items-center gap-3 px-3 h-11 rounded-xl cursor-default select-none transition-colors;
+  }
+
+  .sx-row:hover {
+    @apply bg-elevated;
+  }
+
+  .sx-row[data-selected='true'] {
+    background: rgb(var(--sx-primary) / 0.14);
+    box-shadow: inset 0 0 0 1px rgb(var(--sx-primary) / 0.3);
+  }
+
+  .sx-menu {
+    @apply bg-surface border border-line rounded-2xl shadow-pop py-1.5 min-w-52 animate-slide-up;
+  }
+
+  .sx-menu-item {
+    @apply flex items-center gap-3 px-3 h-9 text-sm text-ink cursor-pointer;
+  }
+
+  .sx-menu-item:hover {
+    @apply bg-elevated;
+  }
+
+  .sx-menu-item[data-danger='true'] {
+    @apply text-danger;
+  }
+
+  .sx-divider {
+    @apply my-1.5 h-px bg-line;
+  }
+
+  .sx-scroll {
+    @apply overflow-y-auto overflow-x-hidden;
+  }
+
+  .sx-gradient-text {
+    background: linear-gradient(120deg, rgb(var(--sx-primary)), rgb(var(--sx-violet)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .sx-progress {
+    @apply h-1.5 rounded-full overflow-hidden;
+    background: rgb(var(--sx-line));
+  }
+
+  .sx-progress > span {
+    @apply block h-full rounded-full transition-[width] duration-200;
+    background-image: linear-gradient(90deg, rgb(var(--sx-secondary)), rgb(var(--sx-primary)));
+  }
+
+  .sx-skeleton {
+    @apply relative overflow-hidden rounded-lg bg-elevated;
+  }
+
+  .sx-skeleton::after {
+    content: '';
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(90deg, transparent, rgb(var(--sx-line) / 0.6), transparent);
+    transform: translateX(-100%);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .drag-none {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+}
+
+/* Fonts are bundled so the interface never calls out to the internet. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local('Inter'), local('Inter var');
+}

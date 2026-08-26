@@ -1,0 +1,42 @@
+# Storix systemd unit. The installer writes this file to
+# /etc/systemd/system/storix.service and fills in the account it created.
+#
+# Developed by X Project.
+
+[Unit]
+Description=Storix file manager
+Documentation=https://github.com/XProject25/Storix
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=storix
+Group=storix
+ExecStart=/usr/bin/storix serve --config /etc/storix/config.yaml
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+WorkingDirectory=/var/lib/storix
+
+# Large transfers need plenty of file descriptors.
+LimitNOFILE=65535
+
+# Needed only when automatic HTTPS binds ports 80 and 443.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/var/lib/storix /var/log/storix
+
+[Install]
+WantedBy=multi-user.target
