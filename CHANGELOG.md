@@ -6,6 +6,31 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.2.3] - 2026-08-26
+
+### Fixed
+
+- `storix user passwd alice -password secret` failed with a usage error, and
+  so did every other account command written with the name before the flags.
+  The standard argument parser stops at the first plain word, which is exactly
+  where people put the username. Flags and names may now be given in any
+  order.
+
+### Changed
+
+- The installer used to end with "Open this link to finish the setup", which
+  left people looking for a password that was never issued. It now says
+  plainly that there is no default password, that whoever opens the link
+  chooses the administrator account, and what the token in the link is for.
+- The hint about `storix setup-token` was printed only when the token could
+  not be read, which is the one case where it cannot help. It is now shown
+  whenever setup is still pending.
+- A re-install of a configured server now also names the two commands people
+  actually need at that point: `storix user list` and
+  `storix user passwd <username>`.
+- The README says the same thing in the same words, so the answer is in the
+  first place anyone looks.
+
 ## [1.2.2] - 2026-08-26
 
 ### Fixed
@@ -293,6 +318,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.2.3]: https://github.com/XProject25/Storix/releases/tag/v1.2.3
 [1.2.2]: https://github.com/XProject25/Storix/releases/tag/v1.2.2
 [1.2.1]: https://github.com/XProject25/Storix/releases/tag/v1.2.1
 [1.2.0]: https://github.com/XProject25/Storix/releases/tag/v1.2.0

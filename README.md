@@ -89,14 +89,24 @@ service, opens the firewall port and prints the link to the setup wizard.
 
   Storix 1.2.0 is installed
 
-  Open this link to finish the setup:
+  There is no default password. Open this link and choose your own
+  administrator username and password:
 
     http://185.12.34.56:8686/setup?token=cJN6n8IF4O6D4bINJA7yPY
 ```
 
-Open the link and a four step wizard asks for an administrator username and
-password, which folders Storix may manage, and optionally a domain. Nothing
-else.
+There is no shipped username or password to look up. The link carries a one
+time token, and whoever opens it first chooses the administrator account: the
+token is what stops a stranger who finds the port from claiming the server
+before you do. It stops working once setup is finished.
+
+The wizard then asks which folders Storix may manage and, optionally, a
+domain. Nothing else.
+
+If the terminal is closed before you open the link, `sudo storix setup-token`
+prints it again. Afterwards, `sudo storix user list` shows the accounts and
+`sudo storix user passwd <username>` sets a new password without needing the
+old one.
 
 ## What it does
 

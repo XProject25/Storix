@@ -53,10 +53,15 @@ func cmdUser(args []string) error {
 	password := fs.String("password", "", "password, read from STORIX_PASSWORD or prompted when empty")
 	var mounts multiFlag
 	fs.Var(&mounts, "mount", "folder the account may use, repeatable")
-	if err := fs.Parse(args); err != nil {
+	// The standard parser stops at the first plain word, so
+	// "user passwd alice -password secret" would treat the flag as another
+	// name and fail. People write the name first, so reorder before parsing.
+	flags, rest := splitArgs(args, map[string]bool{"mount": true, "role": true, "email": true,
+		"name": true, "password": true, "config": true, "port": true, "data": true})
+	if err := fs.Parse(flags); err != nil {
 		return err
 	}
-	rest := fs.Args()
+	rest = append(rest, fs.Args()...)
 
 	a, err := open(*cfgPath, 0, *data, true)
 	if err != nil {
@@ -547,4 +552,35 @@ func cmdConfig(args []string) error {
 		fmt.Println(l)
 	}
 	return nil
+}
+
+// splitArgs separates flags from plain words so the two can be written in any
+// order. The standard flag parser stops at the first plain word, which would
+// turn "user passwd alice -password secret" into three names and an error.
+// valued names the flags that take a following value, so "-mount /srv" is kept
+// together while a boolean flag is not paired with the word after it.
+func splitArgs(args []string, valued map[string]bool) (flags, plain []string) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			plain = append(plain, arg)
+			continue
+		}
+		if arg == "--" {
+			// Everything after this is plain by convention.
+			plain = append(plain, args[i+1:]...)
+			return flags, plain
+		}
+		flags = append(flags, arg)
+		name := strings.TrimLeft(arg, "-")
+		if strings.Contains(name, "=") {
+			// Already carries its value, for example -role=admin.
+			continue
+		}
+		if valued[name] && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return flags, plain
 }

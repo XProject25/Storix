@@ -379,14 +379,22 @@ finish() {
         printf '  This server was already set up, so your accounts and folders are unchanged.\n'
         printf '  Sign in at:\n\n'
         printf '    %s%s%s\n\n' "${BOLD}" "${url}" "${RESET}"
+        printf '  %sForgotten the password?%s  sudo storix user passwd <username>\n' "${DIM}" "${RESET}"
+        printf '  %sForgotten the username?%s  sudo storix user list\n\n' "${DIM}" "${RESET}"
     else
         token="$(cat "${DATA_DIR}/setup-token" 2>/dev/null | tr -d '\n' || true)"
         [ -n "${token}" ] && url="${url}/setup?token=${token}"
-        printf '  Open this link to finish the setup:\n\n'
+        # There is no default password to hand out. The first person to open
+        # this link chooses the administrator username and password, which is
+        # why the link carries a token: it stops a stranger who finds the port
+        # from claiming the server first. Say all of that plainly, because
+        # "finish the setup" on its own leaves people hunting for a password
+        # that was never issued.
+        printf '  There is no default password. Open this link and choose your own\n'
+        printf '  administrator username and password:\n\n'
         printf '    %s%s%s\n\n' "${BOLD}" "${url}" "${RESET}"
-        if [ -z "${token}" ]; then
-            printf '  %sPrint the setup link again with:%s  sudo storix setup-token\n\n' "${DIM}" "${RESET}"
-        fi
+        printf '  %sThe token in the link is what stops anyone else claiming this server%s\n' "${DIM}" "${RESET}"
+        printf '  %sfirst, and it stops working once setup is done. Lost it?%s  sudo storix setup-token\n\n' "${DIM}" "${RESET}"
     fi
     printf '  %sService%s      systemctl status storix\n' "${DIM}" "${RESET}"
     printf '  %sLogs%s         journalctl -u storix -f\n' "${DIM}" "${RESET}"
