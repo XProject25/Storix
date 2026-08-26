@@ -6,6 +6,61 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.2.1] - 2026-08-26
+
+A review of the code that landed in 1.2 with the least scrutiny, plus the
+documentation checked line by line against what the handlers actually do.
+
+### Fixed
+
+- **The storage allowance was not enforced on drive writes at all.** The
+  WebDAV file wrapper embedded `*os.File`, which satisfies `io.ReaderFrom`, so
+  the copy that lands a transfer preferred `ReadFrom` and never went through
+  the method holding the ceiling. Measured: a 4 KB allowance accepted a 200 KB
+  upload in full. The wrapper now does its own `ReadFrom` and the bytes are
+  counted again.
+- **The drive did not apply the permissions the browser applies.** A mount was
+  only marked read only when the account lacked `upload`; nothing consulted
+  `delete`, `create`, `rename`, `move` or `copy`. An account holding just view,
+  download and upload could delete a file and move a folder over the drive,
+  both of which the web interface refuses. Write methods are now gated on the
+  same permission the matching endpoint requires, and a MOVE inside one folder
+  counts as a rename. This tightens existing accounts: a `user` role has no
+  delete, so it can no longer delete over the drive either.
+- **One account could hide another's folder.** Slug uniqueness was decided
+  with exact map keys while the lookup compared without case, so two labels
+  that fold together each got a name in the listing but both resolved to the
+  first mount. The second one's files answered 404 from every name shown.
+- **A correct password could be rate limited.** The drive spent a sign in
+  allowance on every request, so 8 of 16 concurrent listings with the right
+  password were refused with 429. Worse, a success cleared the recorded
+  failures for the whole address, which made guessing effectively unlimited.
+  Failures are now recorded and successes cost nothing.
+- **LOCK on a read only mount answered 500.** Windows and the Finder both open
+  a copy by locking a name that does not exist yet, so the refusal was correct
+  but the status was not. It is a 403 with a sentence.
+- **A re-install told a configured server to finish its setup.** The installer
+  printed whatever was in the setup token file, which was never removed once
+  the wizard had run, so an upgrade greeted the operator with a dead link. The
+  server now deletes that file when setup completes, and the installer asks
+  the running instance whether it is already configured before deciding what
+  to print. The token itself was never accepted after setup.
+- The token last used stamp was throttled with a key that was only unique
+  within one database, so two servers in one process could silence each other.
+
+### Changed
+
+- `docs/API.md` and `docs/WEBDAV.md` were checked endpoint by endpoint against
+  the handlers and corrected. Among other things the drive accepts either an
+  access token or the account password, which the documentation had denied,
+  and the error envelope never carries the `detail` field it advertised.
+
+### Added
+
+- `CONTRIBUTING.md`, issue templates and a pull request template, so a stranger
+  can tell how to build Storix and what is expected of a change.
+- The suite is 166 tests.
+
 ## [1.2.0] - 2026-08-26
 
 Storix stops being something you can only use in a browser tab.
@@ -229,6 +284,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.2.1]: https://github.com/XProject25/Storix/releases/tag/v1.2.1
 [1.2.0]: https://github.com/XProject25/Storix/releases/tag/v1.2.0
 [1.1.1]: https://github.com/XProject25/Storix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/XProject25/Storix/releases/tag/v1.1.0

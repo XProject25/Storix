@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>Modern web file manager for servers.</strong><br>
-  Fast. Secure. Powerful.
+  Browse, upload, edit and share server files from a browser or a mounted drive.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-0077FF?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64-00D4FF?style=flat-square" alt="Architecture">
+  <img src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20arm-00D4FF?style=flat-square" alt="Architecture">
   <img src="https://img.shields.io/badge/install-one%20command-7C3AED?style=flat-square" alt="Install">
   <img src="https://img.shields.io/badge/license-MIT-9CA3AF?style=flat-square" alt="License">
 </p>
@@ -25,6 +25,12 @@ colleague access to exactly one directory without ever creating an SSH account.
 
 It is a single compiled binary. No PHP, no Node runtime on the server, no
 database server, no web server to configure.
+
+## Screenshots
+
+None yet. Screenshots of the file browser, the transfer queue and the settings
+belong in `assets/`, which currently holds only the logo and the icons. This
+section will link them once they are taken and committed.
 
 ## Install
 
@@ -42,7 +48,7 @@ service, opens the firewall port and prints the link to the setup wizard.
 
   + Detected Ubuntu 24.04.1 LTS
   + Detected x86_64 (amd64)
-  > Downloading Storix 1.0.0 for linux/amd64
+  > Downloading Storix 1.2.0 for linux/amd64
   + Checksum verified
   > Creating the service account storix
   > Installing /usr/bin/storix
@@ -52,15 +58,16 @@ service, opens the firewall port and prints the link to the setup wizard.
   > Starting Storix
   + Storix is running
 
-  Storix 1.0.0 is installed
+  Storix 1.2.0 is installed
 
   Open this link to finish the setup:
 
     http://185.12.34.56:8686/setup?token=cJN6n8IF4O6D4bINJA7yPY
 ```
 
-Open the link and a four step wizard asks for an administrator password, which
-folders Storix may manage, and optionally a domain. Nothing else.
+Open the link and a four step wizard asks for an administrator username and
+password, which folders Storix may manage, and optionally a domain. Nothing
+else.
 
 ## What it does
 
@@ -68,11 +75,11 @@ folders Storix may manage, and optionally a domain. Nothing else.
 | --- | --- |
 | **Transfers that survive** | Resumable uploads over the tus protocol. An 80 GB transfer that drops at 79 GB continues at 79 GB, not from zero. Pause, resume, parallel uploads, whole folders, a live queue with speed and time remaining. |
 | **A real file manager** | Drag and drop, multi select, cut, copy, paste, rename in place, right click menus, keyboard shortcuts, list, grid and gallery views, breadcrumbs, search, sorting, favourites, recent files. |
-| **Preview without downloading** | Images, video with seeking, audio, PDF, text, Markdown, JSON, YAML, logs and source code, plus a look inside zip and tar archives. |
+| **Preview without downloading** | Images, video with seeking, audio, PDF, and text, logs, JSON, YAML, Markdown and source code with highlighting. Markdown is shown as text, not rendered. Zip and tar archives list their contents without being extracted. |
 | **Edit in the browser** | A full editor with syntax highlighting for configuration files and scripts. Open, change, save. |
-| **A recycle bin** | Deleting moves to the bin first, with restore, and automatic clean up after a retention period you choose. |
+| **A recycle bin** | Deleting in the browser moves to the bin first, with restore, and automatic clean up after a retention period you choose. A delete through the network drive is immediate. |
 | **Duplicate files** | Find identical copies under any folder and reclaim the space. Candidates are grouped by size first and only then compared by content, so nothing that merely looks the same is ever offered for deletion. |
-| **Archives** | Create zip, tar.gz and tar archives, and extract them, as background jobs with progress. No SSH needed. |
+| **Archives** | Create zip, tar.gz and tar archives, and extract those plus tar.bz2, as background jobs with progress. No SSH needed. |
 | **Share links** | Publish a file or a folder with an expiry, a password and a download limit. Or create an upload request so a client can send you files without an account. |
 | **Accounts without SSH** | Give someone exactly one folder, read only or writable, with a permission set. They never receive server credentials. |
 | **A network drive** | Mount Storix in Windows Explorer, the macOS Finder or a Linux file manager, and work with server files as if they were on the machine in front of you. |
@@ -84,35 +91,33 @@ folders Storix may manage, and optionally a domain. Nothing else.
 ## Mount it as a drive
 
 Storix speaks WebDAV at `/dav/`, so the same folders open in the file manager
-you already use. Sign in with your username and an access token created in the
-interface, not with the account password.
+you already use. Settings, Access tokens shows these three lines filled in with
+your own address and username:
 
 ```bash
 # Windows, in a command prompt
-net use Z: http://SERVER:8686/dav/ /user:alice PASTE_TOKEN
+net use Z: http://SERVER:8686/dav/ /user:alice <token>
 
-# macOS, in Finder press Command K and connect to
+# macOS, in Finder press Command K, enter the address, then sign in as alice
 http://SERVER:8686/dav/
 
-# Linux
-sudo mount -t davfs http://SERVER:8686/dav/ /mnt/storix
+# Linux, as root
+mount -t davfs http://SERVER:8686/dav/ /mnt/storix
 ```
 
+Sign in with your username and an access token as the password. The account
+password also works, unless the account uses two factor sign in, but a token
+can be revoked on its own without changing it.
+
 Windows refuses a WebDAV mount over plain HTTP until a registry value is
-changed, so set up HTTPS first if you can. The full instructions for all three,
-including rclone, are in [docs/WEBDAV.md](docs/WEBDAV.md).
+changed, so set up HTTPS first if you can. The full instructions, including
+rclone and what a mount does not do, are in [docs/WEBDAV.md](docs/WEBDAV.md).
 
 ## How it works
 
-One Go binary serves both the JSON API and the compiled interface.
-
-```
-Browser  ->  storix (Go, single binary)
-                 |- REST API under /api/v1
-                 |- the web interface, embedded in the binary
-                 |- SQLite, at /var/lib/storix/storix.db
-                 `- your folders, in place, never moved
-```
+One Go binary serves the JSON API under `/api/v1`, the WebDAV tree under
+`/dav/`, and the web interface embedded inside it. Everything it keeps of its
+own lives in five places:
 
 ```
 /usr/bin/storix              the whole product

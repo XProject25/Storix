@@ -359,18 +359,34 @@ primary_address() {
 }
 
 finish() {
-    local address token url
+    local address token url configured
     address="$(primary_address)"
-    token="$(cat "${DATA_DIR}/setup-token" 2>/dev/null | tr -d '\n' || true)"
     url="http://${address}:${PORT}"
-    [ -n "${token}" ] && url="${url}/setup?token=${token}"
+
+    # An upgrade must not hand the operator a setup link. Ask the running
+    # server whether the wizard has already been completed, rather than
+    # guessing from a file that may simply have been left behind.
+    configured="no"
+    if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/v1/system/status" 2>/dev/null \
+        | grep -q '"setupRequired"[[:space:]]*:[[:space:]]*false'; then
+        configured="yes"
+    fi
 
     printf '\n'
     printf '  %s%sStorix %s is installed%s\n\n' "${GREEN}" "${BOLD}" "${RELEASE_VERSION}" "${RESET}"
-    printf '  Open this link to finish the setup:\n\n'
-    printf '    %s%s%s\n\n' "${BOLD}" "${url}" "${RESET}"
-    if [ -z "${token}" ]; then
-        printf '  %sPrint the setup link again with:%s  sudo storix setup-token\n\n' "${DIM}" "${RESET}"
+
+    if [ "${configured}" = "yes" ]; then
+        printf '  This server was already set up, so your accounts and folders are unchanged.\n'
+        printf '  Sign in at:\n\n'
+        printf '    %s%s%s\n\n' "${BOLD}" "${url}" "${RESET}"
+    else
+        token="$(cat "${DATA_DIR}/setup-token" 2>/dev/null | tr -d '\n' || true)"
+        [ -n "${token}" ] && url="${url}/setup?token=${token}"
+        printf '  Open this link to finish the setup:\n\n'
+        printf '    %s%s%s\n\n' "${BOLD}" "${url}" "${RESET}"
+        if [ -z "${token}" ]; then
+            printf '  %sPrint the setup link again with:%s  sudo storix setup-token\n\n' "${DIM}" "${RESET}"
+        fi
     fi
     printf '  %sService%s      systemctl status storix\n' "${DIM}" "${RESET}"
     printf '  %sLogs%s         journalctl -u storix -f\n' "${DIM}" "${RESET}"

@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/webdav"
 
@@ -64,6 +65,11 @@ func (a *API) webdavHandler() http.Handler {
 		if user == nil {
 			return
 		}
+		// A drive request carries its credentials rather than a session, so the
+		// account it resolved to is put on the request the way the middleware
+		// does for the browser. It is what names the account in the trail.
+		r = withUser(r, user, nil)
+
 		scope, err := a.scopeFor(r.Context(), user)
 		if err != nil {
 			a.Logger.Error("webdav scope failed", "user", user.Username, "err", err)
@@ -73,6 +79,7 @@ func (a *API) webdavHandler() http.Handler {
 
 		fsys := a.davFileSystem(user, scope)
 		if note := fsys.davRefuseWrite(r); note != "" {
+			a.audit(r, "webdav.denied", r.URL.Path, note, false)
 			http.Error(w, note, http.StatusForbidden)
 			return
 		}
@@ -104,9 +111,13 @@ func (a *API) davAuthenticate(w http.ResponseWriter, r *http.Request) *store.Use
 	key := "webdav:" + ip
 
 	// Failed attempts are slowed down per address, exactly as the sign in form
-	// does. A request that turns out to be genuine gives its allowance back,
-	// so a mounted drive making hundreds of calls never limits itself.
-	if !a.loginLimiter.Allow(key) {
+	// does. Only a failure spends an allowance, and asking how many are left
+	// spends none: a drive opens several connections at once and makes hundreds
+	// of calls a minute, and every one of them carries the credentials again, so
+	// counting a request rather than a failure would have a working mount lock
+	// itself out. It would also mean one caller's success wiping the failures
+	// another has recorded from the same address.
+	if a.loginLimiter.Remaining(key) <= 0 {
 		if wait := a.loginLimiter.RetryAfter(key); wait > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		}
@@ -120,11 +131,11 @@ func (a *API) davAuthenticate(w http.ResponseWriter, r *http.Request) *store.Use
 		user = a.davPasswordUser(r)
 	}
 	if user == nil {
+		a.loginLimiter.Observe(key)
 		a.audit(r, "webdav.denied", r.URL.Path, "credentials refused", false)
 		davChallenge(w)
 		return nil
 	}
-	a.loginLimiter.Reset(key)
 
 	if !user.Can(store.PermView) {
 		a.audit(r, "webdav.denied", r.URL.Path, "account cannot browse files", false)
@@ -192,6 +203,9 @@ type davMount struct {
 	Mount vfs.Mount
 }
 
+// davSlugMax is the longest mount name the drive hands out, in bytes.
+const davSlugMax = 64
+
 // davSlug turns a mount label into a path segment that survives a URL and a
 // desktop file manager: lower case, spaces become dashes, and anything else
 // that could be mistaken for a separator is dropped.
@@ -214,8 +228,21 @@ func davSlug(label string) string {
 	if slug == "" {
 		return "mount"
 	}
-	if len(slug) > 64 {
-		slug = strings.Trim(slug[:64], "-._")
+	if len(slug) > davSlugMax {
+		// The cut is made on a character boundary. Half a character is not text
+		// and does not survive being written into a listing, so the mount would
+		// be named one thing in the listing and answer to another.
+		cut := slug[:davSlugMax]
+		for len(cut) > 0 {
+			if r, size := utf8.DecodeLastRuneInString(cut); r != utf8.RuneError || size > 1 {
+				break
+			}
+			cut = cut[:len(cut)-1]
+		}
+		slug = strings.Trim(cut, "-._")
+		if slug == "" {
+			return "mount"
+		}
 	}
 	return slug
 }
@@ -226,17 +253,30 @@ func davSlug(label string) string {
 func davMountsFor(v *vfs.VFS, scope vfs.Scope) []davMount {
 	listed := v.Mounts(scope)
 	out := make([]davMount, 0, len(listed))
-	taken := make(map[string]bool, len(listed))
+	taken := make([]string, 0, len(listed))
 	for _, m := range listed {
 		base := davSlug(m.Label)
 		slug := base
-		for n := 2; taken[slug]; n++ {
+		for n := 2; davSlugTaken(taken, slug); n++ {
 			slug = base + "-" + strconv.Itoa(n)
 		}
-		taken[slug] = true
+		taken = append(taken, slug)
 		out = append(out, davMount{Slug: slug, Mount: m})
 	}
 	return out
+}
+
+// davSlugTaken reports whether a name is already spoken for. It compares the
+// way davMountBySlug matches rather than byte for byte, because a name that
+// resolves to an earlier mount must never be handed to a later one: the later
+// mount would be listed and then be unreachable behind the earlier one.
+func davSlugTaken(taken []string, slug string) bool {
+	for _, t := range taken {
+		if strings.EqualFold(t, slug) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- the file system --------------------------------------------------------
@@ -424,6 +464,8 @@ func (d *davFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fil
 	return &davFile{
 		File:     f,
 		fs:       d,
+		root:     target.loc.Root,
+		rel:      target.loc.Rel,
 		name:     name,
 		virtual:  target.loc.Virtual,
 		display:  display,
@@ -497,32 +539,91 @@ func (d *davFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 
 // ---- write refusals ---------------------------------------------------------
 
-// davIsWriteMethod reports whether a request wants to change something.
+// davIsWriteMethod reports whether a request wants to change something. LOCK
+// belongs here because a lock on a name that does not exist yet creates the
+// file, which is how Windows and the Finder begin a copy.
 func davIsWriteMethod(method string) bool {
 	switch method {
-	case http.MethodPut, http.MethodDelete, "MKCOL", "MOVE", "COPY", "PROPPATCH":
+	case http.MethodPut, http.MethodDelete, "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK":
 		return true
 	}
 	return false
 }
 
+// davMethodPerm is the permission a write method needs, mirroring the one the
+// same operation needs in the browser, or an empty permission for a method that
+// stands on the read only check alone.
+//
+// A MOVE that keeps the name in its folder is a rename and a MOVE that does not
+// is a move, exactly as the two buttons in the interface are.
+func davMethodPerm(method, from, to string) store.Permission {
+	switch method {
+	case http.MethodPut:
+		return store.PermUpload
+	case http.MethodDelete:
+		return store.PermDelete
+	case "MKCOL":
+		return store.PermCreate
+	case "COPY":
+		return store.PermCopy
+	case "MOVE":
+		if from != "" && to != "" && path.Dir(path.Clean(from)) == path.Dir(path.Clean(to)) {
+			return store.PermRename
+		}
+		return store.PermMove
+	}
+	return ""
+}
+
+// davPermRefusal is the sentence a missing permission is answered with.
+func davPermRefusal(p store.Permission) string {
+	switch p {
+	case store.PermUpload:
+		return "This account is not allowed to add files"
+	case store.PermCreate:
+		return "This account is not allowed to create folders"
+	case store.PermDelete:
+		return "This account is not allowed to delete"
+	case store.PermRename:
+		return "This account is not allowed to rename"
+	case store.PermMove:
+		return "This account is not allowed to move items"
+	case store.PermCopy:
+		return "This account is not allowed to copy"
+	}
+	return "This account is not allowed to do that"
+}
+
 // davRefuseWrite reports the sentence to answer a write with when it names a
-// place that cannot take one, or an empty string to let the request through.
-// The file system refuses these anyway; catching them here is what turns a
-// puzzling status code into something the person at the keyboard can act on.
+// place that cannot take one or asks for something the account may not do, or
+// an empty string to let the request through.
+//
+// The place is decided first and the permission second, so a person reading the
+// answer is told the most specific reason: a read only folder is read only for
+// everyone, whatever their account holds.
+//
+// The file system refuses a forbidden place anyway; catching it here is what
+// turns a puzzling status code into something the person at the keyboard can
+// act on. The permission is a different matter. The guarded layer knows nothing
+// of who is asking, so a method that the same account would be refused in the
+// browser has to be refused here, or the drive would be a way around the
+// account's own limits.
 func (d *davFS) davRefuseWrite(r *http.Request) string {
 	if !davIsWriteMethod(r.Method) {
 		return ""
 	}
+	from := davStripPrefix(r.URL.Path)
+	to := davDestination(r)
+
 	var names []string
 	switch r.Method {
 	case "COPY":
 		// A copy only writes at the destination.
-		names = []string{davDestination(r)}
+		names = []string{to}
 	case "MOVE":
-		names = []string{davStripPrefix(r.URL.Path), davDestination(r)}
+		names = []string{from, to}
 	default:
-		names = []string{davStripPrefix(r.URL.Path)}
+		names = []string{from}
 	}
 
 	for _, name := range names {
@@ -541,6 +642,10 @@ func (d *davFS) davRefuseWrite(r *http.Request) string {
 		if target.loc.ReadOnly() {
 			return "This folder is read only"
 		}
+	}
+
+	if perm := davMethodPerm(r.Method, from, to); perm != "" && !d.user.Can(perm) {
+		return davPermRefusal(perm)
 	}
 	return ""
 }
@@ -611,6 +716,8 @@ type davFile struct {
 	*os.File
 
 	fs       *davFS
+	root     *os.Root
+	rel      string
 	name     string
 	virtual  string
 	display  string
@@ -618,12 +725,15 @@ type davFile struct {
 	limit    int64
 	written  int64
 	created  bool
+	// stopped marks a transfer the allowance cut short.
+	stopped bool
 }
 
 // Write stores bytes, refusing once the storage allowance is spent rather than
 // filling the disk and failing halfway through a large copy.
 func (f *davFile) Write(p []byte) (int, error) {
 	if f.limit >= 0 && f.written+int64(len(p)) > f.limit {
+		f.stopped = true
 		return 0, &os.PathError{Op: "write", Path: f.name, Err: davErrOverQuota}
 	}
 	n, err := f.File.Write(p)
@@ -631,9 +741,37 @@ func (f *davFile) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// davWriteOnly carries the write half of a file and nothing else.
+type davWriteOnly struct{ to *davFile }
+
+// Write hands the bytes to the file, allowance ceiling and all.
+func (w davWriteOnly) Write(p []byte) (int, error) { return w.to.Write(p) }
+
+// ReadFrom is how a transfer actually lands: the protocol copies the request
+// body into the file with io.Copy, which prefers this method over Write when
+// the destination offers it. The embedded handle offers it, so without this the
+// bytes would go straight to the disk and every ceiling in Write, and the count
+// the allowance is moved by afterwards, would be stepped over.
+func (f *davFile) ReadFrom(r io.Reader) (int64, error) {
+	// The wrapper is what keeps io.Copy from finding ReadFrom again and
+	// calling this method for ever.
+	return io.Copy(davWriteOnly{to: f}, r)
+}
+
 // Close finishes the file and records what it added to the account.
+//
+// A transfer the allowance cut short leaves a file holding the first part of
+// what was being copied. If this open is what created it, it is taken away
+// again: a fragment under the name of the whole is worse than nothing, and the
+// client has already been told the copy failed.
 func (f *davFile) Close() error {
 	err := f.File.Close()
+	if f.stopped && f.created && f.root != nil && f.rel != "." {
+		if rmErr := f.root.Remove(f.rel); rmErr != nil && f.fs != nil {
+			f.fs.api.Logger.Debug("part file left behind", "path", f.virtual, "err", rmErr)
+		}
+		return err
+	}
 	if f.created && f.written > 0 && f.fs != nil {
 		f.fs.davRecordUsage(f.written)
 	}

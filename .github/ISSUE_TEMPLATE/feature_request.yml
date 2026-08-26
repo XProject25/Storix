@@ -1,0 +1,56 @@
+# Feature request form for Storix.
+# Developed by X Project.
+name: Feature request
+description: Ask for something Storix cannot do yet
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first. A clear problem often has a simpler answer
+        than the feature that first comes to mind.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What are you trying to do on your server, and where does Storix get in
+        the way today. Concrete beats general.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: The shell command, the other tool, or the manual steps you fall back to.
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like Storix to do
+      description: Only now the proposed solution, and where in the interface or the API it would sit.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Who does this help
+      options:
+        - Anyone running Storix
+        - Servers with many accounts
+        - A particular workflow of mine
+        - Not sure
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Storix 1.x manages the local file system. Remote storage, meaning SFTP,
+        FTP, WebDAV, SMB, S3 and the object stores, is already on the roadmap in
+        the README, so there is no need to file that one again.

@@ -50,11 +50,20 @@ const (
 	tokSweepAt = 256
 )
 
+// tokUseKey names one token of one running server. The map below outlives a
+// request, so it is package level, and a token identifier is only unique within
+// the database it came from: the server is part of the key so two of them in
+// one process cannot throttle each other's writes.
+type tokUseKey struct {
+	api *API
+	id  int64
+}
+
 // tokLastUse remembers when each token last had its stamp written back.
 // tokLastUseMu guards it.
 var (
 	tokLastUseMu sync.Mutex
-	tokLastUse   = make(map[int64]time.Time)
+	tokLastUse   = make(map[tokUseKey]time.Time)
 )
 
 // tokWebDAVInfo is the network drive panel that sits beside the token list: the
@@ -334,12 +343,13 @@ func (a *API) tokNarrow(ctx context.Context, u *store.User, scope store.TokenSco
 // otherwise turn a read only workload into a write on every call.
 func (a *API) tokTouch(id int64, ip string) {
 	now := time.Now()
+	key := tokUseKey{api: a, id: id}
 	tokLastUseMu.Lock()
-	if last, seen := tokLastUse[id]; seen && now.Sub(last) < tokTouchEvery {
+	if last, seen := tokLastUse[key]; seen && now.Sub(last) < tokTouchEvery {
 		tokLastUseMu.Unlock()
 		return
 	}
-	tokLastUse[id] = now
+	tokLastUse[key] = now
 	// Revoked tokens would otherwise sit in the map for the life of the
 	// process, so anything older than the interval is dropped once the map has
 	// grown past a size no real account reaches.

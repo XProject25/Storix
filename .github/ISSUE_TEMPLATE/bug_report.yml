@@ -1,0 +1,106 @@
+# Bug report form for Storix.
+# Developed by X Project.
+name: Bug report
+description: Something in Storix does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report a security problem here. Use the
+        [security advisory page](https://github.com/XProject25/Storix/security/advisories/new)
+        instead, as described in SECURITY.md.
+
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: The full output of `storix version`, which names the commit and the platform.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - Install script (scripts/install.sh)
+        - Release tarball, unpacked by hand
+        - Built from source with make build
+        - Upgraded with storix update
+        - Other, described below
+    validations:
+      required: true
+
+  - type: input
+    id: distribution
+    attributes:
+      label: Distribution
+      description: The PRETTY_NAME line from `/etc/os-release`.
+      placeholder: Ubuntu 24.04.1 LTS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: proxy
+    attributes:
+      label: Does it run behind a reverse proxy
+      description: >
+        If it does, say which in the description, and whether trusted_proxies is
+        set in the configuration.
+      options:
+        - No, clients reach Storix directly
+        - Yes, nginx
+        - Yes, Caddy
+        - Yes, Apache
+        - Yes, Traefik
+        - Yes, Cloudflare Tunnel
+        - Yes, something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what Storix did. Exact steps if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Service log
+      description: >
+        The relevant lines from `sudo journalctl -u storix -n 200 --no-pager`,
+        around the time it went wrong. Remove anything private first.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of sudo storix doctor
+      description: This checks the configuration, database, data directory, port, accounts and mounted folders.
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran `sudo storix doctor` and pasted the result above
+          required: true
+        - label: I am on the newest 1.x release, or I have said above why I cannot be
+          required: true

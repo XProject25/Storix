@@ -1,0 +1,13 @@
+# Issue chooser for Storix.
+# Developed by X Project.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/XProject25/Storix/security/advisories/new
+    about: Report privately through a security advisory, never as a public issue. SECURITY.md explains what is in scope.
+  - name: Installing, configuring or running Storix
+    url: https://github.com/XProject25/Storix#readme
+    about: The README covers installation, folder access, HTTPS and updates. Run sudo storix doctor first, it names most problems itself.
+  - name: API, WebDAV and architecture
+    url: https://github.com/XProject25/Storix/tree/main/docs
+    about: The endpoint reference, the network drive guide and how the parts fit together.

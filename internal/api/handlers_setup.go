@@ -220,6 +220,15 @@ func (a *API) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if err := a.Store.DeleteSetting(ctx, setupTokenKey); err != nil {
 		a.Logger.Warn("setup: token not cleared", "err", err)
 	}
+	// The installer prints whatever is in this file, so leaving it behind
+	// means a later upgrade greets the operator with a dead setup link. The
+	// token is already refused by the server, but a stale credential lying on
+	// disk is worth removing on its own account.
+	if dir := a.Config.Storage.DataDir; dir != "" {
+		if err := os.Remove(filepath.Join(dir, "setup-token")); err != nil && !os.IsNotExist(err) {
+			a.Logger.Warn("setup: token file not removed", "err", err)
+		}
+	}
 
 	csrf := ""
 	sess, err := a.Session.Start(ctx, w, userID, a.clientIP(r), r.UserAgent())
