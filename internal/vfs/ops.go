@@ -864,5 +864,15 @@ func mapErr(err error) error {
 	case errors.Is(err, os.ErrPermission):
 		return fmt.Errorf("%w: permission denied", ErrDenied)
 	}
+	// os.Root refuses a path that would leave the mount, which is exactly the
+	// containment guarantee doing its job. Report it as a refusal rather than
+	// letting it surface as an unexplained server error. The sentinel behind
+	// it is unexported, so the message is the only thing to match on.
+	if strings.Contains(err.Error(), "path escapes from parent") {
+		return fmt.Errorf("%w: that link points outside this folder", ErrForbidden)
+	}
+	if strings.Contains(err.Error(), "too many levels of symbolic links") {
+		return fmt.Errorf("%w: that link points to itself", ErrForbidden)
+	}
 	return err
 }

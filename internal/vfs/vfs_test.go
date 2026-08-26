@@ -2,6 +2,7 @@ package vfs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -174,15 +175,20 @@ func TestSymlinkCannotEscapeTheMount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The link may be seen, but reading through it must not leave the mount.
+	// The link may be seen, but reading through it must not leave the mount,
+	// and the refusal has to arrive as a refusal rather than as an unexplained
+	// server error the interface cannot phrase for the user.
 	if _, err := v.Stat(scope, inside+"/escape"); err != nil {
 		t.Fatalf("the link itself should be visible: %v", err)
 	}
-	if _, _, err := v.Open(scope, inside+"/escape/secret.txt"); err == nil {
-		t.Fatal("reading through a symlink that points outside the mount must fail")
+	if _, _, err := v.Open(scope, inside+"/escape/secret.txt"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("reading through an escaping symlink must report ErrForbidden, got %v", err)
 	}
-	if _, err := v.List(scope, inside+"/escape", ListOptions{}); err == nil {
-		t.Fatal("listing through an escaping symlink must fail")
+	if _, err := v.List(scope, inside+"/escape", ListOptions{}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("listing through an escaping symlink must report ErrForbidden, got %v", err)
+	}
+	if _, err := v.ReadText(scope, inside+"/escape/secret.txt"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("reading text through an escaping symlink must report ErrForbidden, got %v", err)
 	}
 }
 

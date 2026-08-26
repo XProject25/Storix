@@ -6,6 +6,30 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.0.1] - 2026-08-26
+
+Fixes found by installing on a live Ubuntu 22.04 server that also runs an
+unrelated Docker stack.
+
+### Fixed
+
+- The installer sourced `/etc/os-release`, which defines its own `NAME`,
+  `VERSION` and `ID`. That overwrote the variable holding the requested
+  version, so the installer asked GitHub for a release tagged
+  "22.04.5 LTS (Jammy Jellyfish)" and stopped with a misleading message about
+  the internet connection. The values are now read in subshells and the script
+  variable can no longer collide.
+- Release lookup no longer depends on the GitHub API, which allows only sixty
+  unauthenticated calls an hour per address. It falls back to the release page
+  redirect and to the predictable asset URLs, and confirms the asset exists
+  before touching the system.
+- Following a symlink that points outside a mount was correctly refused by the
+  kernel, but the refusal surfaced as "Something went wrong on the server".
+  It now arrives as a clear refusal that names the reason.
+- `storix doctor` judged the binary by whoever ran the command, so running it
+  with sudo always warned that the binary was writable. It now reports the
+  owner and mode of the file itself.
+
 ## [1.0.0] - 2026-08-26
 
 The first release. One binary, one command to install, a complete file manager
@@ -97,4 +121,5 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.0.1]: https://github.com/XProject25/Storix/releases/tag/v1.0.1
 [1.0.0]: https://github.com/XProject25/Storix/releases/tag/v1.0.0

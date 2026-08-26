@@ -467,11 +467,18 @@ func cmdDoctor(args []string) error {
 		}
 	}
 
-	up := updater.New(updater.Options{})
-	if up.Writable() {
-		report("warn", "the binary is writable by this account, in place updates are possible but a root owned binary is safer")
-	} else {
-		report("ok", "the binary is not writable by the service account")
+	// Judge the binary by its own owner and mode, not by whoever ran this
+	// command. Running doctor with sudo would otherwise always look unsafe.
+	guard := updater.New(updater.Options{}).Protection()
+	switch {
+	case !guard.Known:
+		report("warn", "cannot determine who owns "+guard.Path)
+	case guard.OwnedByRoot && !guard.OthersWrite:
+		report("ok", "the binary is owned by root and cannot be rewritten by the service")
+	case guard.OthersWrite:
+		report("fail", "the binary at "+guard.Path+" is writable by others, run: sudo chmod 0755 "+guard.Path)
+	default:
+		report("warn", "the binary at "+guard.Path+" is not owned by root, a root owned binary is safer")
 	}
 
 	fmt.Printf("\n%d ok, %d warnings, %d problems\n", ok, warn, bad)

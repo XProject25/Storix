@@ -457,3 +457,29 @@ func splitVersion(v string) ([3]int, string) {
 	}
 	return out, suffix
 }
+
+// Protection describes how well the installed binary is guarded against being
+// rewritten by the service itself. Reporting this from the file rather than
+// from the caller identity matters, because a check run under sudo would
+// otherwise always claim the binary is writable.
+type Protection struct {
+	Path        string `json:"path"`
+	OwnedByRoot bool   `json:"ownedByRoot"`
+	OthersWrite bool   `json:"othersWrite"`
+	Known       bool   `json:"known"`
+}
+
+// Protection inspects the installed binary.
+func (u *Updater) Protection() Protection {
+	out := Protection{Path: u.opts.BinaryPath}
+	info, err := os.Stat(u.opts.BinaryPath)
+	if err != nil {
+		return out
+	}
+	out.OthersWrite = info.Mode().Perm()&0o022 != 0
+	if uid, ok := binaryOwner(u.opts.BinaryPath); ok {
+		out.OwnedByRoot = uid == 0
+		out.Known = true
+	}
+	return out
+}
