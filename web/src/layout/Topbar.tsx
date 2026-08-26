@@ -6,9 +6,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, subscribe } from '../lib/api'
+import { api } from '../lib/api'
 import { ago, counted, initials, truncateMiddle } from '../lib/format'
 import { useSession } from '../lib/session'
+import { useStorixEvents } from '../state/events'
 import { useApp } from '../state/app'
 import { fromInput, useTransfers } from '../state/transfers'
 import { Icon, type IconName } from '../components/Icon'
@@ -250,17 +251,16 @@ export default function Topbar({ title }: { title?: string }) {
 
   // ---- notifications --------------------------------------------------------
 
-  useEffect(() => {
-    const stop = subscribe((type, data) => {
+  useStorixEvents(
+    useCallback((type: string, data: unknown) => {
       const described = describe(type, data)
       if (!described) return
       noteCounter += 1
       const note: Note = { id: noteCounter, title: described.title, icon: described.icon, at: new Date().toISOString() }
       setNotes((current) => [note, ...current].slice(0, 20))
       setUnread((count) => Math.min(99, count + 1))
-    })
-    return stop
-  }, [])
+    }, []),
+  )
 
   const noteItems: MenuItem[] =
     notes.length === 0

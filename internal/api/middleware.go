@@ -57,7 +57,12 @@ func (a *API) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		// A browser ignores this header on a plain HTTP origin and logs a
+		// console error for it. Most installs run on an address until a domain
+		// is set, so only send it where it actually applies.
+		if r.TLS != nil {
+			h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		}
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
 		// Raw file responses get their own policy in the download handler, so
 		// a hosted HTML file can never execute in the app origin.

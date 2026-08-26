@@ -3,10 +3,10 @@
 // middle, transfers docked bottom right.
 // Developed by X Project.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { subscribe } from '../lib/api'
+import { useStorixEvents } from '../state/events'
 import { baseName, counted, truncateMiddle } from '../lib/format'
 import { useSession } from '../lib/session'
 import { useApp } from '../state/app'
@@ -183,9 +183,10 @@ export default function AppLayout() {
 
   // ---- live updates ---------------------------------------------------------
 
-  useEffect(() => {
-    const invalidate = (key: string) => void queryClient.invalidateQueries({ queryKey: [key] })
-    const stop = subscribe((type) => {
+  useStorixEvents(
+    useCallback(
+      (type: string) => {
+        const invalidate = (key: string) => void queryClient.invalidateQueries({ queryKey: [key] })
       switch (type) {
         case 'fs.changed':
           invalidate('list')
@@ -204,12 +205,13 @@ export default function AppLayout() {
         case 'share.changed':
           invalidate('shares')
           break
-        default:
-          break
-      }
-    })
-    return stop
-  }, [queryClient])
+          default:
+            break
+        }
+      },
+      [queryClient],
+    ),
+  )
 
   useEffect(() => {
     setOnComplete((dir) => {

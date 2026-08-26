@@ -6,6 +6,21 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.1.1] - 2026-08-26
+
+### Fixed
+
+- The interface opened the server sent event stream twice on every page,
+  once from the layout and once from the notification list. Each connection
+  costs a goroutine and a subscriber on the server, and a browser allows only
+  six connections per host over HTTP/1.1, so two streams took a third of the
+  budget for nothing. There is now one shared connection that fans out to
+  every listener and closes when the last one goes away.
+- `Cross-Origin-Opener-Policy` was sent on plain HTTP, where browsers ignore
+  it and log a console error for every page load. Since an install runs on an
+  address until a domain is set, that error greeted almost everyone. The
+  header is now sent only where it applies.
+
 ## [1.1.0] - 2026-08-26
 
 ### Added
@@ -169,6 +184,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.1.1]: https://github.com/XProject25/Storix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/XProject25/Storix/releases/tag/v1.1.0
 [1.0.1]: https://github.com/XProject25/Storix/releases/tag/v1.0.1
 [1.0.0]: https://github.com/XProject25/Storix/releases/tag/v1.0.0
