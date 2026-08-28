@@ -373,7 +373,7 @@ export interface Settings {
     ipAllowlist: string[]
   }
   limits: Record<string, number>
-  updates: { channel: string; autoCheck: boolean }
+  updates: { channel: string; check: boolean; endpoint: string; interval: string }
   server: { domain: string; tlsMode: string; port: number; publicUrl: string }
   trash: { retentionDays: number }
   restartRequired?: boolean

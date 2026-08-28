@@ -59,6 +59,7 @@ type Config struct {
 	Security SecurityConfig `yaml:"security"`
 	Limits   LimitsConfig   `yaml:"limits"`
 	Log      LogConfig      `yaml:"log"`
+	Updates  UpdatesConfig  `yaml:"updates"`
 
 	path string
 }
@@ -149,6 +150,26 @@ type LogConfig struct {
 	Access bool   `yaml:"access_log"`
 }
 
+// DefaultUpdateEndpoint is the service Storix asks about new versions. What
+// the request carries, and how to switch it off, is written down in
+// docs/UPDATES.md.
+const DefaultUpdateEndpoint = "https://updates.xproject.live/v1/check"
+
+// UpdatesConfig controls the version check.
+type UpdatesConfig struct {
+	// Check switches the automatic version check on. With it off Storix
+	// contacts nothing on its own, and a manual "storix update" still works.
+	Check bool `yaml:"check"`
+	// Endpoint receives the check. Pointing it at the GitHub release API
+	// keeps the check while sending nothing that can be counted.
+	Endpoint string `yaml:"endpoint"`
+	// Channel selects the release track: stable or beta.
+	Channel string `yaml:"channel"`
+	// Interval is the floor between two checks. It exists to protect the
+	// receiving host, not this one.
+	Interval Duration `yaml:"interval"`
+}
+
 // Default returns a configuration suitable for a fresh Linux install.
 func Default() *Config {
 	dataDir := "/var/lib/storix"
@@ -203,6 +224,12 @@ func Default() *Config {
 			ListPageSize:     5000,
 		},
 		Log: LogConfig{Level: "info", File: logFile, Format: "text"},
+		Updates: UpdatesConfig{
+			Check:    true,
+			Endpoint: DefaultUpdateEndpoint,
+			Channel:  "stable",
+			Interval: Duration(6 * time.Hour),
+		},
 	}
 }
 
@@ -376,6 +403,18 @@ func (c *Config) Normalize() {
 	if c.Limits.ListPageSize <= 0 {
 		c.Limits.ListPageSize = d.Limits.ListPageSize
 	}
+	// Updates.Check is left exactly as it was read. It is the one field here
+	// that has a meaningful false, and an operator who switched the check off
+	// must not have it switched back on by a later repair.
+	if c.Updates.Endpoint == "" {
+		c.Updates.Endpoint = d.Updates.Endpoint
+	}
+	if c.Updates.Channel == "" {
+		c.Updates.Channel = d.Updates.Channel
+	}
+	if c.Updates.Interval == 0 {
+		c.Updates.Interval = d.Updates.Interval
+	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
 	}
@@ -406,6 +445,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.TLS.Mode == TLSManual && (c.Server.TLS.CertFile == "" || c.Server.TLS.KeyFile == "") {
 		return errors.New("config: tls.mode manual requires cert_file and key_file")
+	}
+	// A short interval is always a mistake, and the machine it would punish
+	// belongs to somebody else.
+	if c.Updates.Interval != 0 && c.Updates.Interval.D() < time.Hour {
+		return fmt.Errorf("config: updates.interval %s is shorter than one hour", c.Updates.Interval.D())
 	}
 	return nil
 }

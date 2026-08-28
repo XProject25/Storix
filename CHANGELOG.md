@@ -6,6 +6,35 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.4.0] - 2026-08-29
+
+### Added
+
+- **Storix counts how many servers are running it.** The software is
+  downloaded once and then lives on machines nobody else can see, so there was
+  no way to tell whether it was being used at all. The version check now
+  carries an install identifier, the version, the platform and the release
+  channel, and nothing else: no address is sent, and none is recorded at the
+  other end either. It is explained in full in
+  [docs/UPDATES.md](docs/UPDATES.md), summarised in Settings, Updates, and
+  switched off with one toggle or `updates: check: false`.
+- **The service that receives those checks is in this repository**, under
+  `cmd/storix-updates`, so the promise made in the documentation can be read
+  rather than taken on faith. It answers with the newest release, keeps one
+  row per install, deletes anything unseen for 180 days, and serves a summary
+  that needs a token.
+- **The update check runs on its own.** It used to happen only when an
+  administrator opened a page, so a server quietly doing its job never learned
+  that a release existed. The first check is spread across the first hour and
+  later ones are jittered, so a fleet upgraded in one afternoon does not all
+  knock at the same second. With checking switched off the loop does not run.
+
+### Fixed
+
+- The knob on every toggle in the interface sat outside its track and over the
+  label next to it. It was positioned by its static position rather than
+  anchored to the track.
+
 ## [1.3.0] - 2026-08-26
 
 ### Added
@@ -338,6 +367,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.4.0]: https://github.com/XProject25/Storix/releases/tag/v1.4.0
 [1.3.0]: https://github.com/XProject25/Storix/releases/tag/v1.3.0
 [1.2.3]: https://github.com/XProject25/Storix/releases/tag/v1.2.3
 [1.2.2]: https://github.com/XProject25/Storix/releases/tag/v1.2.2

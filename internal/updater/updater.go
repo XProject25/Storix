@@ -22,11 +22,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/XProject25/Storix/internal/build"
@@ -46,11 +48,36 @@ type Options struct {
 	BinaryPath string
 	Client     *http.Client
 	Logger     *slog.Logger
+
+	// Endpoint is the update service asked about new versions. An empty
+	// value goes straight to the GitHub release API, which is also where a
+	// failed service call falls back to.
+	Endpoint string
+	// Instance identifies this install to the update service so two checks
+	// from one server are not counted as two servers. An empty value sends
+	// no identifier, and the service does not count the check.
+	Instance string
+	// Check reports whether Storix may ask anything at all. With it false
+	// no request is made, by any caller, for any reason.
+	Check bool
+	// Interval is the floor between two checks. It protects the host being
+	// asked, so it is enforced here rather than by whoever calls in.
+	Interval time.Duration
 }
+
+// DefaultInterval is how long an answer is reused when the caller names no
+// interval of its own.
+const DefaultInterval = 6 * time.Hour
 
 // Updater talks to the release feed.
 type Updater struct {
 	opts Options
+
+	// mu guards the remembered answer and also serialises the request, so
+	// several callers arriving together produce one call and not several.
+	mu     sync.Mutex
+	last   *Release
+	lastAt time.Time
 }
 
 // Release describes the newest published build.
@@ -87,6 +114,9 @@ func New(o Options) *Updater {
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
+	}
+	if o.Interval <= 0 {
+		o.Interval = DefaultInterval
 	}
 	return &Updater{opts: o}
 }
@@ -125,8 +155,69 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-// Check asks the release feed what the newest version is.
+// Check reports the newest published version.
+//
+// It prefers the update service, falls back to the GitHub release API when
+// that service answers badly or not at all, and answers from the last result
+// until the interval has passed, so a busy dashboard cannot turn a page load
+// into a request. With checking switched off it asks nobody.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
+	if !u.opts.Check {
+		return &Release{
+			Current:  strings.TrimPrefix(u.opts.Current, "v"),
+			Version:  strings.TrimPrefix(u.opts.Current, "v"),
+			Writable: u.Writable(),
+			Message:  "Update checking is switched off",
+		}, nil
+	}
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.last != nil && time.Since(u.lastAt) < u.opts.Interval {
+		return u.last, nil
+	}
+
+	if serviceEndpoint(u.opts.Endpoint) {
+		rel, err := u.checkService(ctx, u.checkIn())
+		if err == nil {
+			u.last, u.lastAt = rel, time.Now()
+			return rel, nil
+		}
+		// One host being down must not cost anyone their update check.
+		u.opts.Logger.Debug("update service unavailable, using the release feed", "err", err)
+	}
+
+	rel, err := u.checkGitHub(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u.last, u.lastAt = rel, time.Now()
+	return rel, nil
+}
+
+// serviceEndpoint reports whether an endpoint expects the check-in document.
+// An address on GitHub does not: the documentation offers the GitHub release
+// API as the way to keep the update check while sending nothing countable, so
+// an install configured that way reaches GitHub the GitHub way and no
+// identifier ever leaves the server.
+func serviceEndpoint(endpoint string) bool {
+	if strings.TrimSpace(endpoint) == "" {
+		return false
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "github.com", "api.github.com", "objects.githubusercontent.com":
+		return false
+	}
+	return true
+}
+
+// checkGitHub asks the GitHub release API what the newest version is. It is
+// the fallback, and it is what an install that names no update service uses.
+func (u *Updater) checkGitHub(ctx context.Context) (*Release, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.opts.Repo)
 	if u.opts.Channel == "beta" {
 		endpoint = fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=5", u.opts.Repo)

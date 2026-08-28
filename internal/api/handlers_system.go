@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,9 +27,9 @@ import (
 	"github.com/XProject25/Storix/internal/vfs"
 )
 
-// sysSettingUpdateAutoCheck records whether Storix may poll the release feed
-// on its own. The release channel lives under store.SettingUpdateChannel.
-const sysSettingUpdateAutoCheck = "update.auto_check"
+// sysUpdateMinInterval is the shortest gap an operator may put between two
+// update checks. It protects the host being asked, not this one.
+const sysUpdateMinInterval = time.Hour
 
 // sysDiskBudget is how long the dashboard waits for the file system to answer
 // a usage question. A single unresponsive disk must never stall the home
@@ -467,9 +468,14 @@ type sysLimitSettings struct {
 	ListPageSize         int   `json:"listPageSize"`
 }
 
+// sysUpdateSettings is the update check as the interface reads it: whether it
+// runs, where it is sent and how often. What the request carries is written
+// out in docs/UPDATES.md.
 type sysUpdateSettings struct {
-	Channel   string `json:"channel"`
-	AutoCheck bool   `json:"autoCheck"`
+	Channel  string `json:"channel"`
+	Check    bool   `json:"check"`
+	Endpoint string `json:"endpoint"`
+	Interval string `json:"interval"`
 }
 
 type sysServerSettings struct {
@@ -516,8 +522,10 @@ type sysLimitPatch struct {
 }
 
 type sysUpdatePatch struct {
-	Channel   *string `json:"channel"`
-	AutoCheck *bool   `json:"autoCheck"`
+	Channel  *string `json:"channel"`
+	Check    *bool   `json:"check"`
+	Endpoint *string `json:"endpoint"`
+	Interval *string `json:"interval"`
 }
 
 type sysServerPatch struct {
@@ -598,8 +606,10 @@ func (a *API) sysReadSettings(ctx context.Context) (sysSettings, error) {
 			ListPageSize:         cfg.Limits.ListPageSize,
 		},
 		Updates: sysUpdateSettings{
-			Channel:   channel,
-			AutoCheck: a.Store.GetBool(ctx, sysSettingUpdateAutoCheck, true),
+			Channel:  channel,
+			Check:    cfg.Updates.Check,
+			Endpoint: cfg.Updates.Endpoint,
+			Interval: sysIntervalText(cfg.Updates.Interval.D()),
 		},
 		Server: sysServerSettings{
 			Domain:    cfg.Server.Domain,
@@ -724,6 +734,37 @@ func (a *API) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		next.Limits.TrashRetention = config.Duration(time.Duration(*t.RetentionDays) * 24 * time.Hour)
 	}
 
+	// The update check: whether it runs at all, where it is sent and how
+	// often. Only the last two need a restart, because the updater is built
+	// with them when the service starts.
+	if u := req.Updates; u != nil {
+		if u.Check != nil {
+			next.Updates.Check = *u.Check
+		}
+		if u.Endpoint != nil {
+			endpoint, err := sysCleanEndpoint(*u.Endpoint)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			if endpoint != next.Updates.Endpoint {
+				changed = append(changed, "updates.endpoint")
+			}
+			next.Updates.Endpoint = endpoint
+		}
+		if u.Interval != nil {
+			interval, err := sysCleanInterval(*u.Interval)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			if interval != next.Updates.Interval {
+				changed = append(changed, "updates.interval")
+			}
+			next.Updates.Interval = interval
+		}
+	}
+
 	// The settings that live in the database are checked here as well, so a
 	// document that is rejected halfway can never leave the configuration file
 	// ahead of the stored values.
@@ -743,6 +784,9 @@ func (a *API) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, r, badRequest("The update channel must be stable or beta"))
 			return
 		}
+		// The stored value is what the updater follows. The file carries the
+		// same track so it reads as the truth rather than as a leftover.
+		next.Updates.Channel = channel
 	}
 
 	if err := next.Validate(); err != nil {
@@ -765,12 +809,6 @@ func (a *API) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if channel != "" {
 		if err := a.Store.SetSetting(ctx, store.SettingUpdateChannel, channel); err != nil {
-			a.fail(w, r, err)
-			return
-		}
-	}
-	if u := req.Updates; u != nil && u.AutoCheck != nil {
-		if err := a.Store.SetBool(ctx, sysSettingUpdateAutoCheck, *u.AutoCheck); err != nil {
 			a.fail(w, r, err)
 			return
 		}
@@ -881,6 +919,59 @@ func sysAtLeastOne64(label string, v *int64) error {
 	return nil
 }
 
+// sysCleanEndpoint validates where the update check is sent. Anything that is
+// not a full http or https address is refused, because a half written address
+// would quietly turn the check into a failure every six hours.
+func sysCleanEndpoint(raw string) (string, error) {
+	endpoint := strings.TrimSpace(raw)
+	invalid := badRequest("The update address must be a full http or https address, for example " +
+		config.DefaultUpdateEndpoint)
+	if endpoint == "" {
+		return "", invalid
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return "", invalid
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", invalid
+	}
+	return endpoint, nil
+}
+
+// sysCleanInterval reads how often the check may run.
+func sysCleanInterval(raw string) (config.Duration, error) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return 0, badRequest("Say how often the check may run, as a length of time such as 6h")
+	}
+	interval, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, badRequest("The update check interval must be a length of time such as 6h or 24h")
+	}
+	if interval < sysUpdateMinInterval {
+		return 0, badRequest("The update check must not run more often than once an hour")
+	}
+	return config.Duration(interval), nil
+}
+
+// sysIntervalText writes a duration the short way, so six hours reads as 6h
+// rather than as 6h0m0s. Only trailing zero parts are dropped, so 1h30m keeps
+// its minutes.
+func sysIntervalText(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	text := d.String()
+	if strings.HasSuffix(text, "m0s") {
+		text = strings.TrimSuffix(text, "0s")
+	}
+	if strings.HasSuffix(text, "h0m") {
+		text = strings.TrimSuffix(text, "0m")
+	}
+	return text
+}
+
 // sysSaveConfig writes the configuration file, turning the two failures an
 // operator can actually act on into plain answers.
 func (a *API) sysSaveConfig(cfg *config.Config) error {
@@ -911,6 +1002,8 @@ func sysExplainConfig(err error) string {
 		return "Manual certificates need a certificate file and a key file"
 	case strings.Contains(msg, "server.port"):
 		return "The port must be between 1 and 65535"
+	case strings.Contains(msg, "updates.interval"):
+		return "The update check must not run more often than once an hour"
 	}
 	return "That combination of settings cannot be used"
 }

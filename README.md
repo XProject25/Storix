@@ -139,7 +139,7 @@ so it is safe in a playbook that may be applied again.
 | **A network drive** | Mount Storix in Windows Explorer, the macOS Finder or a Linux file manager, and work with server files as if they were on the machine in front of you. |
 | **Access tokens** | Scriptable access for backups, rclone and continuous integration. A token is revoked on its own, without changing the account password or signing anybody out. |
 | **Plain language** | The permission dialog asks who can access this, not what the octal mode is. Owner, group and mode bits live behind an Advanced disclosure for the people who want them. |
-| **Updates in place** | The interface reports a new version and installs it, or you run `sudo storix update`. |
+| **Updates in place** | The interface reports a new version and installs it, or you run `sudo storix update`. That same check is also how the project counts how many servers are running: it sends an install identifier, the version and the platform, never an address, and it can be turned off in Settings, Updates, as [docs/UPDATES.md](docs/UPDATES.md) explains. |
 | **Automatic HTTPS** | Point a domain at the server, type it into settings, and a certificate is issued and renewed for you. |
 
 ## Mount it as a drive

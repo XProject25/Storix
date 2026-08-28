@@ -342,7 +342,30 @@ func cmdUpdate(args []string) error {
 	if ch == "" {
 		ch, _ = a.store.GetSetting(ctx, store.SettingUpdateChannel)
 	}
-	up := updater.New(updater.Options{Channel: ch, Logger: a.log})
+	if ch == "" {
+		ch = a.cfg.Updates.Channel
+	}
+	// Check is true whatever the configuration says: an operator typing this
+	// command has asked for the check, and refusing it would only leave them
+	// without a way to update. An install that switched checking off is still
+	// not counted, so it goes to the release feed with no identifier at all.
+	endpoint, instance := "", ""
+	if a.cfg.Updates.Check {
+		endpoint = a.cfg.Updates.Endpoint
+		id, err := a.store.InstanceID(ctx)
+		if err != nil {
+			a.log.Warn("instance identifier unavailable", "err", err)
+		}
+		instance = id
+	}
+	up := updater.New(updater.Options{
+		Channel:  ch,
+		Endpoint: endpoint,
+		Instance: instance,
+		Check:    true,
+		Interval: a.cfg.Updates.Interval.D(),
+		Logger:   a.log,
+	})
 	rel, err := up.Check(ctx)
 	if err != nil {
 		return err

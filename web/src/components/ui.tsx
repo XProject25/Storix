@@ -189,7 +189,10 @@ export function Toggle({
       >
         <span
           className={clsx(
-            'absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+            // left-0 anchors the knob to the track. Without it the knob takes
+            // its static position, which the button own layout puts at the far
+            // end, so the knob lands outside the track and over the label.
+            'absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
             checked ? 'translate-x-[18px]' : 'translate-x-0.5',
           )}
         />

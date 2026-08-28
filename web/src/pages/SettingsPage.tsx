@@ -27,6 +27,7 @@ import {
 } from '../components/ui'
 
 const GITHUB_URL = 'https://github.com/XProject25/Storix'
+const UPDATES_DOC_URL = 'https://github.com/XProject25/Storix/blob/main/docs/UPDATES.md'
 const RESTART_COMMAND = 'sudo systemctl restart storix'
 const UPDATE_COMMAND = 'sudo storix update'
 
@@ -462,7 +463,9 @@ export default function SettingsPage() {
       const sentUpdates = body.updates
       if (sentUpdates) {
         if (sentUpdates.channel !== saved.updates.channel) kept.push('Update channel')
-        if (sentUpdates.autoCheck !== saved.updates.autoCheck) kept.push('Automatic update check')
+        if (sentUpdates.check !== saved.updates.check) kept.push('Update check')
+        if (sentUpdates.endpoint !== saved.updates.endpoint) kept.push('Update address')
+        if (sentUpdates.interval !== saved.updates.interval) kept.push('Update interval')
       }
       setDropped(kept)
       setRestart(needsRestart ? RESTART_COMMAND : '')
@@ -483,7 +486,9 @@ export default function SettingsPage() {
       a.security.allowAdvanced !== b.security.allowAdvanced ||
       a.security.ipAllowlist.join('|') !== b.security.ipAllowlist.join('|') ||
       a.updates.channel !== b.updates.channel ||
-      a.updates.autoCheck !== b.updates.autoCheck
+      a.updates.check !== b.updates.check ||
+      a.updates.endpoint !== b.updates.endpoint ||
+      a.updates.interval !== b.updates.interval
     )
   }, [draft, settings.data])
 
@@ -1388,6 +1393,7 @@ function UpdatesTab({
   const toast = useToast()
   const [release, setRelease] = useState<Release | null>(null)
   const [error, setError] = useState('')
+  const [advanced, setAdvanced] = useState(false)
 
   const info = useQuery({ queryKey: ['systemInfo'], queryFn: api.systemInfo })
   const current = info.data?.build.version || fallbackVersion || 'unknown'
@@ -1413,6 +1419,74 @@ function UpdatesTab({
   return (
     <div className="space-y-8">
       <section>
+        <SectionTitle>The update check</SectionTitle>
+        <div className="sx-panel space-y-4 p-4">
+          <Toggle
+            checked={draft.updates.check}
+            onChange={(value) =>
+              patch((currentDraft) => ({
+                ...currentDraft,
+                updates: { ...currentDraft.updates, check: value },
+              }))
+            }
+            label="Check for new versions"
+            hint="Storix asks whether a newer version exists, and that request is also how the project counts how many servers are running. It sends four things: an identifier for this install, the version it runs, the platform, such as linux amd64, and the release channel. Nothing else, and no address is recorded at either end."
+          />
+          <a
+            href={UPDATES_DOC_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            What is sent
+            <Icon name="external" size={13} />
+          </a>
+
+          <div className="border-t border-line pt-3">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 text-sm text-muted transition-colors hover:text-ink"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced((value) => !value)}
+            >
+              <Icon name={advanced ? 'chevron-down' : 'chevron-right'} size={15} />
+              Advanced
+            </button>
+            {advanced && (
+              <div className="mt-3 space-y-4">
+                <Field
+                  label="Where the check is sent"
+                  value={draft.updates.endpoint}
+                  placeholder="https://updates.xproject.live/v1/check"
+                  spellCheck={false}
+                  hint="Point this at your own mirror, or at https://api.github.com/repos/XProject25/Storix/releases/latest to keep the check while sending nothing that can be counted."
+                  onChange={(event) =>
+                    patch((currentDraft) => ({
+                      ...currentDraft,
+                      updates: { ...currentDraft.updates, endpoint: event.target.value },
+                    }))
+                  }
+                />
+                <Field
+                  label="How often"
+                  value={draft.updates.interval}
+                  placeholder="6h"
+                  spellCheck={false}
+                  hint="A length of time, such as 6h or 24h. Once an hour is as often as it may run."
+                  onChange={(event) =>
+                    patch((currentDraft) => ({
+                      ...currentDraft,
+                      updates: { ...currentDraft.updates, interval: event.target.value },
+                    }))
+                  }
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section>
         <SectionTitle>Version</SectionTitle>
         <div className="sx-panel space-y-4 p-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -1426,10 +1500,27 @@ function UpdatesTab({
                 {release ? (release.available ? `, version ${release.version} is available` : ', up to date') : ''}
               </div>
             </div>
-            <Button icon="refresh" loading={check.isPending} onClick={() => check.mutate()}>
+            <Button
+              icon="refresh"
+              loading={check.isPending}
+              disabled={!draft.updates.check}
+              onClick={() => check.mutate()}
+            >
               Check for updates
             </Button>
           </div>
+
+          {!draft.updates.check && (
+            <Notice tone="info" icon="info">
+              <p>
+                Checking is off, so Storix contacts nothing: not on its own, and not from this button. The
+                version above is simply what this server runs. Installing a new version by hand still works.
+              </p>
+              <div className="mt-2">
+                <CommandLine command={UPDATE_COMMAND} />
+              </div>
+            </Notice>
+          )}
 
           {error && (
             <Notice tone="danger" icon="alert">
@@ -1437,7 +1528,7 @@ function UpdatesTab({
             </Notice>
           )}
 
-          {release && !release.available && (
+          {release && !release.available && draft.updates.check && (
             <Notice tone="success" icon="check-circle">
               Storix is already the newest version on the {draft.updates.channel} channel.
             </Notice>
@@ -1506,7 +1597,7 @@ function UpdatesTab({
       </section>
 
       <section>
-        <SectionTitle>How Storix checks</SectionTitle>
+        <SectionTitle>Which releases</SectionTitle>
         <div className="sx-panel space-y-4 p-4">
           <Select
             label="Release channel"
@@ -1519,17 +1610,9 @@ function UpdatesTab({
               patch((currentDraft) => ({ ...currentDraft, updates: { ...currentDraft.updates, channel: value } }))
             }
           />
-          <Toggle
-            checked={draft.updates.autoCheck}
-            onChange={(value) =>
-              patch((currentDraft) => ({
-                ...currentDraft,
-                updates: { ...currentDraft.updates, autoCheck: value },
-              }))
-            }
-            label="Look for new versions on its own"
-            hint="Storix asks the release service now and then and tells you when something is waiting. It never installs anything without you."
-          />
+          <p className="text-xs text-faint">
+            Storix tells you when something is waiting. It never installs anything without you.
+          </p>
         </div>
       </section>
     </div>

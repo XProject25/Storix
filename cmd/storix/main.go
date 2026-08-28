@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -312,7 +313,24 @@ func cmdServe(args []string) error {
 	})
 
 	channel, _ := a.store.GetSetting(ctx, store.SettingUpdateChannel)
-	a.updater = updater.New(updater.Options{Channel: channel, Logger: a.log})
+	if channel == "" {
+		channel = a.cfg.Updates.Channel
+	}
+	// The identifier only exists so two checks from this server are counted
+	// once. It is read even when checking is off, because reading it costs
+	// nothing and it is never sent by an updater that asks nobody.
+	instance, err := a.store.InstanceID(ctx)
+	if err != nil {
+		a.log.Warn("instance identifier unavailable", "err", err)
+	}
+	a.updater = updater.New(updater.Options{
+		Channel:  channel,
+		Endpoint: a.cfg.Updates.Endpoint,
+		Instance: instance,
+		Check:    a.cfg.Updates.Check,
+		Interval: a.cfg.Updates.Interval.D(),
+		Logger:   a.log,
+	})
 
 	static, err := web.Handler(*staticDir)
 	if err != nil {
@@ -339,6 +357,7 @@ func cmdServe(args []string) error {
 		a.log.Warn("setup token", "err", err)
 	}
 	go a.janitor(ctx)
+	go a.updateWatch(ctx)
 
 	srv := server.New(server.Options{Config: a.cfg, Handler: rest.Handler(), Logger: a.log})
 	if err := srv.Run(ctx); err != nil {
@@ -396,6 +415,62 @@ func (a *app) ensureSetupToken(ctx context.Context) error {
 }
 
 // janitor performs the periodic housekeeping.
+// updateWatch keeps the update check running on a server nobody is looking at.
+//
+// Without it the check only ever happens when an administrator opens a page,
+// so a server that is quietly doing its job would never learn that a release
+// exists, and the project counting those servers would really be counting
+// visits to the settings screen. An install that switched checking off is not
+// woken here at all: Check returns without asking anyone, but there is no
+// reason to spend a goroutine on discovering that every few hours.
+func (a *app) updateWatch(ctx context.Context) {
+	if !a.cfg.Updates.Check {
+		return
+	}
+	every := a.cfg.Updates.Interval.D()
+	if every < time.Hour {
+		every = updater.DefaultInterval
+	}
+
+	// Installs are upgraded in waves, and a fleet that all started within the
+	// same minute would otherwise knock on the door in the same second for the
+	// rest of its life. The first check is delayed by a random part of an
+	// hour, and each one after that is spread across a tenth of the interval,
+	// so the load stays flat without any install checking less often.
+	timer := time.NewTimer(randomWait(updateFirstWait))
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		// A failure here is not worth a line in anyone log file: the answer is
+		// advisory, the next attempt is hours away, and an operator who cannot
+		// reach the internet already knows.
+		if _, err := a.updater.Check(ctx); err != nil {
+			a.log.Debug("update check failed", "err", err)
+		}
+		timer.Reset(every + randomWait(every/10))
+	}
+}
+
+// updateFirstWait is how long the first check is spread over. It is a
+// variable rather than a constant only so the test does not have to wait an
+// hour to watch the loop work.
+var updateFirstWait = time.Hour
+
+// randomWait returns a duration somewhere in the first half of span, or zero
+// when span is too small to divide. It uses the same source as the rest of the
+// product rather than a seeded one, so two installs starting together do not
+// pick the same delay.
+func randomWait(span time.Duration) time.Duration {
+	if span <= time.Second {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(span / 2)))
+}
+
 func (a *app) janitor(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
