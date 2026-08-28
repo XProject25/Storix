@@ -568,6 +568,7 @@ func cmdConfig(args []string) error {
 			"storage":   cfg.Storage,
 			"limits":    cfg.Limits,
 			"log":       cfg.Log,
+			"updates":   cfg.Updates,
 		})
 	}
 	lines := []string{
@@ -579,6 +580,13 @@ func cmdConfig(args []string) error {
 		"database       " + cfg.Storage.Database,
 		"trash          " + cfg.Storage.TrashDir,
 		"log file       " + cfg.Log.File,
+	}
+	// Somebody who switched the update check off should be able to confirm it
+	// from the shell rather than trusting that the file was read.
+	if cfg.Updates.Check {
+		lines = append(lines, "update check   on, "+cfg.Updates.Endpoint)
+	} else {
+		lines = append(lines, "update check   off, nothing is sent")
 	}
 	for _, l := range lines {
 		fmt.Println(l)

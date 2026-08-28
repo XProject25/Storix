@@ -205,6 +205,48 @@ server {
 The usual `proxy_set_header X-Real-IP` and `X-Forwarded-For` lines are left out
 on purpose. The service would not read them, and they should not be sent.
 
+## Apache
+
+The same thing where Apache already holds the certificates:
+
+```apache
+<VirtualHost *:443>
+    ServerName updates.xproject.live
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/updates.xproject.live/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/updates.xproject.live/privkey.pem
+
+    # Nothing here needs a client address, so none is recorded or passed on.
+    CustomLog /dev/null common
+
+    ProxyPreserveHost On
+    ProxyPass        /v1/check  http://127.0.0.1:8787/v1/check
+    ProxyPassReverse /v1/check  http://127.0.0.1:8787/v1/check
+    ProxyPass        /v1/stats  http://127.0.0.1:8787/v1/stats
+    ProxyPassReverse /v1/stats  http://127.0.0.1:8787/v1/stats
+    ProxyPass        /healthz   http://127.0.0.1:8787/healthz
+
+    <Location />
+        Require all denied
+    </Location>
+    <Location /v1/check>
+        Require all granted
+    </Location>
+    <Location /v1/stats>
+        Require all granted
+    </Location>
+    <Location /healthz>
+        Require all granted
+    </Location>
+</VirtualHost>
+```
+
+It needs `a2enmod proxy proxy_http ssl` and, because Apache forwards the
+authorization header only when told to, `a2enmod headers` is not required but
+`SetEnvIf` rules that strip it must not be present, or the statistics endpoint
+will answer 401 through the proxy while working on localhost.
+
 ## Tests
 
 ```
