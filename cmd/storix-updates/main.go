@@ -96,16 +96,21 @@ func run(args []string) error {
 		store:      store,
 		releases:   newReleaseCache(*repo, logger),
 		statsToken: strings.TrimSpace(os.Getenv(tokenEnv)),
+		viewKey:    strings.TrimSpace(os.Getenv(viewKeyEnv)),
 		retention:  time.Duration(*retention) * 24 * time.Hour,
 		logger:     logger,
 	}
 	if svc.statsToken == "" {
 		logger.Warn("statistics are switched off because " + tokenEnv + " is not set")
 	}
+	if svc.viewKey == "" {
+		logger.Info("the page is switched off because " + viewKeyEnv + " is not set")
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/check", svc.handleCheck)
 	mux.HandleFunc("/v1/stats", svc.handleStats)
+	mux.HandleFunc("/dashboard", svc.handleDashboard)
 	mux.HandleFunc("/healthz", svc.handleHealth)
 	mux.HandleFunc("/", svc.handleNotFound)
 
@@ -173,6 +178,7 @@ type service struct {
 	store      *Store
 	releases   *releaseCache
 	statsToken string
+	viewKey    string
 	retention  time.Duration
 	logger     *slog.Logger
 }

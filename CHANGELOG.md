@@ -6,6 +6,18 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.4.3] - 2026-08-29
+
+### Added
+
+- **A page for the count.** The update service already knew how many servers
+  were running, but reading it meant a token and a shell. `GET /dashboard?k=`
+  is a page to bookmark: the total, how many were seen today, this week and
+  this month, and the split by version and platform. It has its own key rather
+  than the statistics token, so the link never carries the credential that
+  reads the API, and a wrong key gets the same 404 as any other address rather
+  than an invitation to guess again.
+
 ## [1.4.2] - 2026-08-29
 
 ### Fixed
@@ -411,6 +423,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.4.3]: https://github.com/XProject25/Storix/releases/tag/v1.4.3
 [1.4.2]: https://github.com/XProject25/Storix/releases/tag/v1.4.2
 [1.4.1]: https://github.com/XProject25/Storix/releases/tag/v1.4.1
 [1.4.0]: https://github.com/XProject25/Storix/releases/tag/v1.4.0

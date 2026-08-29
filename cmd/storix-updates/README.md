@@ -137,6 +137,25 @@ entirely rather than served openly.
 
 `GET /healthz` answers `ok` for a monitor. It needs no token.
 
+## The page
+
+`/v1/stats` is the figure, but reading it means remembering a token and piping
+it through something that formats it. `GET /dashboard?k=<key>` is the version
+you bookmark: how many servers are running, how many were seen today, this week
+and this month, and the split by version and platform.
+
+It is gated by its own key, `STORIX_UPDATES_VIEW_KEY`, not by the statistics
+token, so a link sitting in a browser history or pasted to somebody never
+carries the credential that reads the API. Without that variable the page
+answers 503, and a wrong key gets the same plain 404 as any unknown address, so
+the page does not announce that it exists. The key is compared in constant
+time.
+
+The page is one document: no script, no font and no image loaded from
+anywhere, under a content policy that forbids it. Every label on it comes from
+anonymous callers, so all of it is escaped, and there is a test that writes
+`<script>` into the table and checks the page comes back with it inert.
+
 ## Statistics
 
 ```
