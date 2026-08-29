@@ -6,6 +6,21 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.4.2] - 2026-08-29
+
+### Fixed
+
+- **An update is now only ever installed from the project's own release
+  hosting.** Counting servers meant the answer about the newest version could
+  come from the update service rather than straight from GitHub, and that
+  answer also names the file to download and the checksum list to verify it
+  against. A checksum from the same answer only proves the download matches
+  what that answer asked for, so the service, or anyone who took it over,
+  could have handed every server a different binary, which is then installed
+  as root. The address is now checked against the project's release hosting
+  before anything is fetched, whatever the answer says. Ordinary updates are
+  unaffected: they already come from there.
+
 ## [1.4.1] - 2026-08-29
 
 ### Fixed
@@ -396,6 +411,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.4.2]: https://github.com/XProject25/Storix/releases/tag/v1.4.2
 [1.4.1]: https://github.com/XProject25/Storix/releases/tag/v1.4.1
 [1.4.0]: https://github.com/XProject25/Storix/releases/tag/v1.4.0
 [1.3.0]: https://github.com/XProject25/Storix/releases/tag/v1.3.0

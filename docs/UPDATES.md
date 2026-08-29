@@ -82,6 +82,14 @@ updates:
 Storix falls back to that address on its own if the update service cannot be
 reached, so a check never fails just because one host is down.
 
+## What it can never do
+
+The answer names a version, and when you ask to install it, the file to
+download. That address is checked against the project's own release hosting on
+GitHub before anything is fetched, and an answer pointing anywhere else is
+refused rather than installed. The update service can tell your server that a
+release exists. It cannot tell it what to run.
+
 ## When it runs
 
 At most once every six hours, and only while the server is running. It happens

@@ -303,6 +303,39 @@ func AssetName(version string) string {
 	return fmt.Sprintf("storix_%s_%s_%s.tar.gz", version, runtime.GOOS, runtime.GOARCH)
 }
 
+// ErrUntrustedAsset is returned when a release names a download somewhere
+// other than the project's own release hosting.
+var ErrUntrustedAsset = errors.New("updater: that release points its download somewhere untrusted, refusing to install")
+
+// downloadHosts is where a Storix build may be fetched from. Nothing else is
+// accepted, whoever says otherwise.
+//
+// The update service answers with the address of the build to install, and the
+// checksum it is verified against comes from the same answer, so a checksum
+// alone only proves the download matches what that answer asked for. This is
+// what makes the answer unable to point anywhere it likes: the binary is
+// installed as root, so the one thing an update must never be is a way to run
+// somebody else's code.
+var downloadHosts = map[string]bool{
+	"github.com":                           true,
+	"api.github.com":                       true,
+	"objects.githubusercontent.com":        true,
+	"release-assets.githubusercontent.com": true,
+	"codeload.github.com":                  true,
+}
+
+// trustedDownload reports whether a release asset may be fetched from here.
+func trustedDownload(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return false
+	}
+	return downloadHosts[strings.ToLower(parsed.Hostname())]
+}
+
 // Apply downloads and installs a release.
 func (u *Updater) Apply(ctx context.Context, rel *Release, progress func(done, total int64)) error {
 	if rel == nil || !rel.Available {
@@ -313,6 +346,10 @@ func (u *Updater) Apply(ctx context.Context, rel *Release, progress func(done, t
 	}
 	if !u.Writable() {
 		return ErrNotWritable
+	}
+	// Where the build comes from is not the answering service's decision.
+	if !trustedDownload(rel.AssetURL) || !trustedDownload(rel.Checksum) {
+		return ErrUntrustedAsset
 	}
 
 	sums, err := u.fetchChecksums(ctx, rel.Checksum)
