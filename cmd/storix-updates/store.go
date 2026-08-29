@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	// Pure Go SQLite driver, so this service needs no cgo and no external
@@ -58,7 +60,27 @@ const (
 	instanceLen    = 32
 	maxVersionLen  = 32
 	maxPlatformLen = 16
-	maxChannelLen  = 16
+)
+
+// The release tracks this service publishes. The channel arrives from the
+// caller and becomes both a cache key and a lookup against the release feed,
+// so it has to come from a fixed set rather than merely look like a word.
+const (
+	ChannelStable = "stable"
+	ChannelBeta   = "beta"
+)
+
+// How many identifiers this service has never seen before may become rows.
+//
+// An anonymous endpoint cannot tell a real server from an invented one, so the
+// question is not how to refuse forgeries but how to bound what they cost. New
+// identifiers are given out of a bucket that refills slowly, and the table has
+// a ceiling on top of that. A server already known to the service is never
+// gated: it only updates the row it already has.
+const (
+	maxInstances     = 250_000
+	newInstanceBurst = 500
+	newInstancePerHr = 200
 )
 
 // CheckIn is one server reporting in. These five values are everything the
@@ -144,15 +166,7 @@ func validPlatform(s string) bool {
 
 // validChannel accepts a release track name such as stable or beta.
 func validChannel(s string) bool {
-	if s == "" || len(s) > maxChannelLen {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < 'a' || s[i] > 'z' {
-			return false
-		}
-	}
-	return true
+	return s == ChannelStable || s == ChannelBeta
 }
 
 // Stats is the summary served on /v1/stats. It counts servers, it never
@@ -165,6 +179,7 @@ type Stats struct {
 	Checks      int64          `json:"checks"`
 	Versions    map[string]int `json:"versions"`
 	Platforms   map[string]int `json:"platforms"`
+	RefusedNew  int64          `json:"refusedNew"`
 	FirstSeen   *time.Time     `json:"firstSeen"`
 	LastSeen    *time.Time     `json:"lastSeen"`
 	GeneratedAt time.Time      `json:"generatedAt"`
@@ -174,6 +189,20 @@ type Stats struct {
 type Store struct {
 	db   *sql.DB
 	path string
+
+	// rows is how many instances the table holds. It is kept here rather than
+	// counted per request because the only question asked of it, whether the
+	// table has reached its ceiling, is asked on every unknown identifier.
+	rows atomic.Int64
+
+	// refused counts identifiers that were turned away by the budget. It is
+	// reported in the statistics, because a number climbing there is how the
+	// owner learns somebody is inventing servers.
+	refused atomic.Int64
+
+	gate   sync.Mutex
+	tokens float64
+	filled time.Time
 }
 
 // OpenStore connects to the database, creating it when needed.
@@ -208,7 +237,21 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("updates: create schema: %w", err)
 	}
-	return &Store{db: db, path: path}, nil
+	// SQLite creates the file with whatever the umask allows, which on most
+	// hosts is readable by everyone. This service usually shares a machine
+	// with unrelated sites, so the file is narrowed to its own account.
+	if err := os.Chmod(path, 0o640); err != nil && !errors.Is(err, os.ErrNotExist) {
+		db.Close()
+		return nil, fmt.Errorf("updates: secure %s: %w", path, err)
+	}
+	st := &Store{db: db, path: path}
+	var rows int64
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM instances`).Scan(&rows); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("updates: count instances: %w", err)
+	}
+	st.rows.Store(rows)
+	return st, nil
 }
 
 // Path reports the database file location.
@@ -235,21 +278,88 @@ func (s *Store) Record(ctx context.Context, in CheckIn, now time.Time) error {
 		return err
 	}
 	stamp := now.UTC().Unix()
-	_, err := s.db.ExecContext(ctx, `
+
+	// A server this service already knows is never gated. It owns a row
+	// already, so writing to it costs nothing and refusing it would lose a
+	// real install from the count.
+	res, err := s.db.ExecContext(ctx, `
+        UPDATE instances SET
+            version   = ?,
+            os        = ?,
+            arch      = ?,
+            channel   = ?,
+            last_seen = ?,
+            checks    = checks + 1
+        WHERE instance = ?`,
+		in.Version, in.OS, in.Arch, in.Channel, stamp, in.Instance)
+	if err != nil {
+		return fmt.Errorf("updates: record check in: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n > 0 {
+		return nil
+	}
+
+	// An identifier nobody has seen before wants a new row, and that is the
+	// only thing an anonymous caller can make this service spend. Refusing is
+	// not an error: the caller still gets its answer, it simply is not
+	// counted.
+	if !s.allowNew(now) {
+		s.refused.Add(1)
+		return nil
+	}
+	res, err = s.db.ExecContext(ctx, `
         INSERT INTO instances (instance, version, os, arch, channel, first_seen, last_seen, checks)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-        ON CONFLICT(instance) DO UPDATE SET
-            version   = excluded.version,
-            os        = excluded.os,
-            arch      = excluded.arch,
-            channel   = excluded.channel,
-            last_seen = excluded.last_seen,
-            checks    = instances.checks + 1`,
+        ON CONFLICT(instance) DO NOTHING`,
 		in.Instance, in.Version, in.OS, in.Arch, in.Channel, stamp, stamp)
 	if err != nil {
 		return fmt.Errorf("updates: record check in: %w", err)
 	}
+	inserted, err := res.RowsAffected()
+	if err != nil {
+		// The row is written either way. Only the counter is uncertain, and
+		// Prune reseeds it.
+		return nil
+	}
+	if inserted > 0 {
+		s.rows.Add(1)
+		return nil
+	}
+	// Two check-ins from the same new server raced and the other one won the
+	// insert. Apply this one as the update it turned out to be.
+	if _, err := s.db.ExecContext(ctx, `
+        UPDATE instances SET last_seen = ?, checks = checks + 1 WHERE instance = ?`,
+		stamp, in.Instance); err != nil {
+		return fmt.Errorf("updates: record check in: %w", err)
+	}
 	return nil
+}
+
+// allowNew reports whether an identifier the service has never seen may become
+// a row. The bucket refills with time, so genuine growth is never blocked for
+// long, while a caller inventing identifiers as fast as it can send them is
+// held to a few thousand a day instead of as many as it likes.
+func (s *Store) allowNew(now time.Time) bool {
+	if s.rows.Load() >= maxInstances {
+		return false
+	}
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	if s.filled.IsZero() {
+		s.filled, s.tokens = now, newInstanceBurst
+	}
+	if elapsed := now.Sub(s.filled); elapsed > 0 {
+		s.tokens += elapsed.Hours() * newInstancePerHr
+		if s.tokens > newInstanceBurst {
+			s.tokens = newInstanceBurst
+		}
+		s.filled = now
+	}
+	if s.tokens < 1 {
+		return false
+	}
+	s.tokens--
+	return true
 }
 
 // Stats summarises the table as it stands at now.
@@ -293,6 +403,9 @@ func (s *Store) Stats(ctx context.Context, now time.Time) (Stats, error) {
 	if err := s.tally(ctx, platformQuery, out.Platforms); err != nil {
 		return out, err
 	}
+	// Not a count of servers, but of identifiers the budget turned away since
+	// this process started. Zero is the normal reading.
+	out.RefusedNew = s.refused.Load()
 	return out, nil
 }
 
@@ -330,7 +443,13 @@ func (s *Store) Prune(ctx context.Context, retention time.Duration, now time.Tim
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, nil
+		n = 0
+	}
+	// Rows that were forgotten are room the ceiling may use again, so the
+	// counter is read back from the table rather than adjusted by hand.
+	var rows int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM instances`).Scan(&rows); err == nil {
+		s.rows.Store(rows)
 	}
 	return n, nil
 }

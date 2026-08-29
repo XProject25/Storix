@@ -213,6 +213,7 @@ type errorResponse struct {
 // handleCheck answers POST /v1/check.
 func (s *service) handleCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This endpoint accepts POST")
 		return
 	}
@@ -238,7 +239,7 @@ func (s *service) handleCheck(w http.ResponseWriter, r *http.Request) {
 		Channel:  strings.ToLower(strings.TrimSpace(req.Channel)),
 	}
 	if in.Channel == "" {
-		in.Channel = "stable"
+		in.Channel = ChannelStable
 	}
 	if err := in.Validate(); err != nil {
 		switch {
@@ -457,7 +458,10 @@ func assetName(version, goos, goarch string) string {
 // is also the fetch guard: one caller performs the GitHub request while the
 // others wait for its result, so a burst of check ins is one call.
 type releaseCache struct {
-	repo   string
+	repo string
+	// base is where the release feed lives. It is a field only so a test can
+	// point it at a server it controls instead of at GitHub.
+	base   string
 	client *http.Client
 	logger *slog.Logger
 
@@ -467,6 +471,7 @@ type releaseCache struct {
 
 // cachedRelease is what is known about one channel.
 type cachedRelease struct {
+	mu      sync.Mutex
 	rel     *release
 	fetched time.Time
 	lastTry time.Time
@@ -477,6 +482,7 @@ type cachedRelease struct {
 func newReleaseCache(repo string, logger *slog.Logger) *releaseCache {
 	return &releaseCache{
 		repo:    repo,
+		base:    "https://api.github.com",
 		client:  &http.Client{Timeout: 20 * time.Second},
 		logger:  logger,
 		entries: map[string]*cachedRelease{},
@@ -487,14 +493,22 @@ func newReleaseCache(repo string, logger *slog.Logger) *releaseCache {
 // When GitHub cannot be reached it answers with the last known release, and
 // only reports an error when there has never been one.
 func (c *releaseCache) get(ctx context.Context, channel string) (*release, error) {
+	// The map lock is held only long enough to find the entry. Holding it
+	// across the fetch below would put every caller, including the ones whose
+	// answer is already cached, behind one network round trip.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	entry := c.entries[channel]
 	if entry == nil {
 		entry = &cachedRelease{}
 		c.entries[channel] = entry
 	}
+	c.mu.Unlock()
+
+	// Callers asking for the same channel still wait for each other, which is
+	// the point: one fetch serves all of them rather than each making its own.
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
 	now := time.Now()
 	if entry.rel != nil && now.Sub(entry.fetched) <= releaseTTL {
 		return entry.rel, nil
@@ -545,9 +559,13 @@ type ghRelease struct {
 // takes the published latest release, any other channel takes the newest
 // release that is not a draft, which is how a prerelease is offered.
 func (c *releaseCache) fetch(ctx context.Context, channel string) (*release, error) {
-	endpoint := "https://api.github.com/repos/" + c.repo + "/releases/latest"
-	if channel != "stable" {
-		endpoint = "https://api.github.com/repos/" + c.repo + "/releases?per_page=10"
+	base := c.base
+	if base == "" {
+		base = "https://api.github.com"
+	}
+	endpoint := base + "/repos/" + c.repo + "/releases/latest"
+	if channel != ChannelStable {
+		endpoint = base + "/repos/" + c.repo + "/releases?per_page=10"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -571,7 +589,7 @@ func (c *releaseCache) fetch(ctx context.Context, channel string) (*release, err
 	}
 
 	var found ghRelease
-	if channel == "stable" {
+	if channel == ChannelStable {
 		if err := json.Unmarshal(body, &found); err != nil {
 			return nil, fmt.Errorf("updates: decode release feed: %w", err)
 		}

@@ -3,6 +3,7 @@
 /build/
 /storix
 /storix.exe
+/storix-updates.exe
 *.test
 *.out
 

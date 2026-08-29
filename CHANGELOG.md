@@ -6,6 +6,35 @@ All notable changes to Storix are recorded here. The format follows
 
 Developed by X Project.
 
+## [1.4.1] - 2026-08-29
+
+### Fixed
+
+- **The update service could be made to spend without limit.** It answers
+  anybody on the internet, and an adversarial review before it was exposed
+  found three ways to abuse that. Invented identifiers could create rows
+  without any ceiling, which both filled the disk of a machine running other
+  sites and made the count worthless. The release channel was accepted as any
+  lowercase word, and each new word became a cache entry that was kept forever
+  and cost one call to the release feed, so sixty requests exhausted the hourly
+  quota and left genuine callers with nothing. And the cache held a single
+  global lock across that call, so one slow answer parked every other check-in
+  behind it, including the ones whose answer was already in hand.
+
+  New identifiers now come out of a bucket that refills, on top of a hard
+  ceiling; a server the service already knows is never held to it. The channel
+  is an allowlist. The lock is held only while the map is read, never across
+  the network. `refusedNew` in the statistics shows when somebody is inventing
+  servers, and `cmd/storix-updates/README.md` sets out exactly what an
+  anonymous caller can spend.
+- The update service database was created readable by everyone on the machine.
+- `405` answers from the update service now carry the `Allow` header.
+
+### Changed
+
+- `storix config` says whether the update check is on and where it points, so
+  an operator who switched it off can confirm that from the shell.
+
 ## [1.4.0] - 2026-08-29
 
 ### Added
@@ -367,6 +396,7 @@ in the browser.
 - In place updates from the interface or with `sudo storix update`, keeping
   accounts, settings and folders.
 
+[1.4.1]: https://github.com/XProject25/Storix/releases/tag/v1.4.1
 [1.4.0]: https://github.com/XProject25/Storix/releases/tag/v1.4.0
 [1.3.0]: https://github.com/XProject25/Storix/releases/tag/v1.3.0
 [1.2.3]: https://github.com/XProject25/Storix/releases/tag/v1.2.3

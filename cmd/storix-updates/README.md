@@ -89,6 +89,36 @@ the janitor deletes something.
 Nothing beyond the five fields above is read from the request. Unknown fields
 in the body are ignored rather than kept.
 
+## What an anonymous caller can spend
+
+This service answers anybody on the internet, and it cannot tell a real Storix
+server from an invented one: the identifier is a random number, and demanding
+proof of anything would mean collecting something about the caller, which is
+exactly what the promise above rules out. So the question is not how to refuse
+forgeries, it is how to bound what they cost. Read the count as a good estimate
+rather than an audited figure.
+
+| what a caller controls | what bounds it                                        |
+| ---------------------- | ----------------------------------------------------- |
+| body size              | 4 KB, refused with 413 before it is parsed             |
+| field lengths          | fixed caps per field, anything longer is a 400         |
+| the channel            | an allowlist of `stable` and `beta`, nothing else      |
+| new rows               | a bucket of 500, refilling at 200 an hour              |
+| total rows             | a ceiling of 250,000                                   |
+| calls to GitHub        | one per channel per five minutes, whatever the traffic |
+
+A server the service already knows is never held to the bucket: it owns a row
+already, so it only updates it. The bucket applies to identifiers that have
+never been seen, which is the only thing an anonymous caller can make this
+service spend. A refused caller is not told off and is not an error: it still
+gets its answer about the newest release, it simply is not counted.
+`refusedNew` in the statistics is how the owner notices somebody is inventing
+servers. Zero is the normal reading.
+
+Put a rate limit in front of it as well. The proxy sees the address and this
+service never does, so a limit there costs nothing in privacy terms. The
+samples below include one.
+
 ## Build and run
 
 ```
@@ -158,6 +188,10 @@ the unit: `EnvironmentFile=/etc/storix-updates.env`, mode 0600.
 ## nginx
 
 ```nginx
+# At http level. The address is used to make a decision and then discarded,
+# which is nginx's business, not this service's.
+limit_req_zone $binary_remote_addr zone=storixcheck:10m rate=1r/s;
+
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
@@ -172,6 +206,7 @@ server {
     client_max_body_size 64k;
 
     location = /v1/check {
+        limit_req zone=storixcheck burst=5 nodelay;
         proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -220,6 +255,9 @@ The same thing where Apache already holds the certificates:
     # Nothing here needs a client address, so none is recorded or passed on.
     CustomLog /dev/null common
 
+    # mod_ratelimit shapes bandwidth, not requests, so the request limit comes
+    # from mod_qos or mod_evasive where they are available. Without one, the
+    # bucket inside the service is what bounds the damage.
     ProxyPreserveHost On
     ProxyPass        /v1/check  http://127.0.0.1:8787/v1/check
     ProxyPassReverse /v1/check  http://127.0.0.1:8787/v1/check
